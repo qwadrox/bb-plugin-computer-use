@@ -80,7 +80,8 @@ the version, commit, and push a tag `extension-v<version>` (plugin releases use
 `v*`). The workflow checks the tag against both files, packages the zip and
 uploads it with the repository secrets `EXTENSION_ID`, `PUBLISHER_ID`,
 `CLIENT_ID`, `CLIENT_SECRET` and `REFRESH_TOKEN` (a Chrome Web Store API OAuth
-client of the publisher account). A manual run can upload a draft without
+client of the publisher account). A manual run (Actions → publish-extension →
+Run workflow) builds the chosen branch or tag and can upload a draft without
 submitting it for review.
 
 Icons are in `static/icons`;

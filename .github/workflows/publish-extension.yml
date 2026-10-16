@@ -1,7 +1,8 @@
 # Uploads Browser Bridge for bb to the Chrome Web Store on an extension-v* tag
 # (plugin releases use v*). The tag must match the version in
 # browser-extension/static/manifest.json and browser-extension/package.json.
-# A manual run publishes the newest extension-v* tag, or the one given.
+# A manual run builds the given tag, or else the branch it runs on, and can
+# upload a draft without submitting it for review.
 name: publish-extension
 on:
   push:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish, e.g. extension-v0.1.0 (default: the newest extension-v* tag)"
+        description: "Tag to publish, e.g. extension-v0.1.1 (default: the branch this run uses)"
         required: false
         default: ""
       publish:
@@ -33,23 +34,25 @@ jobs:
           EVENT: ${{ github.event_name }}
           REQUESTED: ${{ inputs.tag }}
         run: |
+          tag=""
           if [ "$EVENT" = "push" ]; then
             tag="$GITHUB_REF_NAME"
           elif [ -n "$REQUESTED" ]; then
             tag="$REQUESTED"
-          else
-            tag=$(git tag -l 'extension-v*' --sort=-v:refname | head -n 1)
           fi
-          if ! printf '%s' "$tag" | grep -Eq '^extension-v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::no usable extension-v* tag (got '$tag')"
-            exit 1
+          if [ -n "$tag" ]; then
+            if ! printf '%s' "$tag" | grep -Eq '^extension-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::not an extension-v<major>.<minor>.<patch> tag: '$tag'"
+              exit 1
+            fi
+            git checkout --quiet "refs/tags/$tag"
           fi
-          git checkout --quiet "refs/tags/$tag"
-          version="${tag#extension-v}"
           manifest=$(jq -r .version browser-extension/static/manifest.json)
           package=$(jq -r .version browser-extension/package.json)
+          version="${tag#extension-v}"
+          [ -n "$tag" ] || version="$manifest"
           if [ "$manifest" != "$version" ] || [ "$package" != "$version" ]; then
-            echo "::error::$tag does not match manifest.json ($manifest) and package.json ($package)"
+            echo "::error::version $version does not match manifest.json ($manifest) and package.json ($package)"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
