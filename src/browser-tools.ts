@@ -144,7 +144,7 @@ export function browserToolResult(tool: BrowserTool, reply: BrowserCallResult, s
   if (!reply.ok) {
     if (SETUP_CODES.has(reply.code)) {
       return text(
-        `${reply.message}\n\nThe Browser Bridge for bb needs setup by the user: stop and give them the [Computer Use settings](${settingsPath}) link (Browser extension section). Do not work around it with other browser tools unless the user says so.`,
+        `${reply.message}\n\nThe Browser Bridge for bb needs setup by the user: stop and give them the [Desktop & Browser Agent settings](${settingsPath}) link (Browser extension section). Do not work around it with other browser tools unless the user says so.`,
         true,
       );
     }

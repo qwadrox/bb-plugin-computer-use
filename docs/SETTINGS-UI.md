@@ -1,6 +1,6 @@
 # Settings UI
 
-Where: **Settings → Plugins → Computer Use**.
+Where: **Settings → Plugins → Desktop & Browser Agent**.
 
 bb renders the declarative configuration form first. The plugin then registers
 six sibling settings cards so each concern has its own boundary instead of
@@ -23,7 +23,7 @@ appearing as a nested card inside one large group:
    browsers are set up and connected), the Chrome Web Store link, the Load unpacked steps with the
    extension folder and a Copy button, and the extension id. Like the routing
    mode, the checkbox lives in plugin storage so it appears once.
-6. **About Computer Use** credits Cua AI and links to the official Cua Driver
+6. **About Desktop & Browser Agent** credits Cua AI and links to the official Cua Driver
    documentation and source repository.
 
 Rows stay on one line. Where a routing mode or checklist item has extra detail,

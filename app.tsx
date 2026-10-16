@@ -388,8 +388,8 @@ function InstallDialog({
               : install.running
                 ? `The official Cua installer is running on ${host.name}${install.target ? ` (v${install.target})` : " (newest release)"}.`
                 : failed
-                  ? "The installer stopped before Computer Use was ready. Review the details below, then retry."
-                  : "Computer Use can now connect to this machine through Cua Driver."}
+                  ? "The installer stopped before Desktop & Browser Agent was ready. Review the details below, then retry."
+                  : "Desktop & Browser Agent can now connect to this machine through Cua Driver."}
           </DialogDescription>
         </DialogHeader>
 
@@ -397,7 +397,7 @@ function InstallDialog({
           <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
             <p>
               This plugin release was tested with <strong className="font-medium text-foreground">v{testedVersion}</strong>
-              {current !== null ? <> and this machine runs v{current}</> : null}. A newer release can add or change tools; Computer Use then keeps tools it has not reviewed off until you allow them.
+              {current !== null ? <> and this machine runs v{current}</> : null}. A newer release can add or change tools; Desktop & Browser Agent then keeps tools it has not reviewed off until you allow them.
             </p>
             {installed ? (
               <p>The running driver is stopped first and restarted afterwards.</p>
@@ -1151,7 +1151,7 @@ export function AboutComputerUse() {
   return (
     <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
       <p>
-        Computer Use is an independent bb integration powered by <strong className="font-medium text-foreground">Cua Driver</strong>, the open-source desktop and browser automation runtime from Cua AI, Inc.
+        Desktop & Browser Agent is an independent bb integration powered by <strong className="font-medium text-foreground">Cua Driver</strong>, the open-source desktop and browser automation runtime from Cua AI, Inc.
       </p>
       <div className="flex flex-wrap gap-x-4 gap-y-2">
         <a className="rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" href={CUA_DOCS_URL} target="_blank" rel="noreferrer">
@@ -1198,7 +1198,7 @@ export default definePluginApp((app) => {
   });
   app.slots.settingsSection({
     id: "about",
-    title: "About Computer Use",
+    title: "About Desktop & Browser Agent",
     component: AboutComputerUse,
   });
   // The id must match APPROVAL_RENDERER in server.ts.

@@ -1,5 +1,12 @@
 # Third-party notices
 
+## Origin
+
+This plugin started as a fork of
+[bb-plugin-cua-driver](https://github.com/juanbermudez/bb-plugin-cua-driver)
+("Computer Use") by Juan Bermudez, MIT licensed; `LICENSE` keeps that
+copyright notice. It is listed separately as **Desktop & Browser Agent**.
+
 ## Cua Driver (Cua AI, Inc.)
 
 This plugin is an independent integration for [bb](https://getbb.app) that
@@ -9,9 +16,10 @@ Cua AI, Inc.
 - Cua Driver, the `cua-driver` CLI, the MCP server, and the SDKs are developed
   by Cua AI, Inc. and released under the MIT License:
   <https://github.com/trycua/cua> (see `LICENSE.md` in that repository).
-- The plugin logo in `icons/cua.svg` is derived from `img/logo_black.svg` in
-  the Cua repository (MIT). "Cua" is a name of Cua AI, Inc.; it is used here
-  only to identify the upstream runtime this plugin integrates.
+- "Cua" is a name of Cua AI, Inc.; it is used here only to identify the
+  upstream runtime this plugin integrates. The plugin icon
+  (`icons/desktop-browser-agent.svg`) is original work of this project and uses
+  no Cua or bb artwork. Earlier versions used a logo derived from Cua's.
 - The agent skill in `skills/cua-computer-use/SKILL.md` is adapted from the
   upstream Cua Driver skill pack (`libs/cua-driver/rust/Skills/cua-driver/`,
   MIT). Sections on the snapshot-before-action invariant, the

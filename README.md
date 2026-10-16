@@ -1,11 +1,14 @@
-# Computer Use for bb
+# Desktop & Browser Agent for bb
 
 Lets [bb](https://getbb.app) agents use desktop apps and browsers on your
 machine, in the background, powered by [Cua Driver](https://cua.ai/docs) from
 Cua AI.
 
 A community plugin, not affiliated with or endorsed by Cua AI, Inc. or the bb
-team. See [NOTICE.md](NOTICE.md).
+team. It started as a fork of Juan Bermudez's
+[Computer Use](https://github.com/juanbermudez/bb-plugin-cua-driver) plugin and
+adds an optional browser extension, approvals for sensitive actions, and more.
+See [NOTICE.md](NOTICE.md).
 
 ## Features
 
@@ -36,7 +39,7 @@ team. See [NOTICE.md](NOTICE.md).
    bb plugin install https://github.com/qwadrox/bb-plugin-computer-use
    ```
 
-2. Open **Settings → Plugins → Computer Use**, select **Install Cua Driver…**
+2. Open **Settings → Plugins → Desktop & Browser Agent**, select **Install Cua Driver…**
    next to your machine, and on macOS select **Grant macOS permissions**.
 3. Start a new thread and ask the agent to do something in an app.
 
@@ -47,7 +50,7 @@ manual installs, see the [reference](docs/REFERENCE.md#requirements).
 
 Off until you turn it on:
 
-1. In **Settings → Plugins → Computer Use → Browser extension**, tick **Offer
+1. In **Settings → Plugins → Desktop & Browser Agent → Browser extension**, tick **Offer
    browser_\* tools** and select **Install bridge**.
 2. Add [Browser Bridge for bb](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc) from the Chrome Web
    Store (it works in Brave and Edge too). To run a local build instead, run

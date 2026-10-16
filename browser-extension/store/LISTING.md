@@ -24,7 +24,7 @@ You stay in control:
 • While an agent is working, the browser shows its debugging bar; closing it pauses agents too.
 • The extension only opens or navigates to http, https and about:blank pages.
 
-Requirements: the bb app and its Computer Use plugin, with the browser extension turned on and the bridge installed (Settings → Plugins → Computer Use → Browser extension). The extension talks only to that bridge on your own machine, through native messaging. It makes no network requests of its own and has no analytics.
+Requirements: the bb app and its Desktop & Browser Agent plugin, with the browser extension turned on and the bridge installed (Settings → Plugins → Desktop & Browser Agent → Browser extension). The extension talks only to that bridge on your own machine, through native messaging. It makes no network requests of its own and has no analytics.
 
 Works in Brave, Chrome, Edge and Chromium on macOS and Linux.
 
@@ -47,7 +47,7 @@ Lets coding agents running in the bb app on the user's own computer read and ope
   ```
 - `nativeMessaging`:
   ```
-  The extension's only connection is to the native messaging host that the bb Computer Use plugin installs on the same computer. Agent requests arrive and results return through it; nothing goes to a remote server.
+  The extension's only connection is to the native messaging host that the bb Desktop & Browser Agent plugin installs on the same computer. Agent requests arrive and results return through it; nothing goes to a remote server.
   ```
 - `tabs`:
   ```

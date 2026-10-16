@@ -71,7 +71,7 @@ export const META_TOOLS: readonly MetaTool[] = [
   {
     name: "cua_call",
     description:
-      "Call a Cua Driver tool by name with a JSON argument object. Use it for tools that have no dedicated cua_* tool; cua_describe lists them and shows each schema. Tools turned off in Computer Use settings are refused.",
+      "Call a Cua Driver tool by name with a JSON argument object. Use it for tools that have no dedicated cua_* tool; cua_describe lists them and shows each schema. Tools turned off in Desktop & Browser Agent settings are refused.",
     parameters: z.object({
       tool: z.string().min(1).describe("Driver tool name such as get_screen_size"),
       arguments: z.record(z.string(), z.unknown()).default({}),

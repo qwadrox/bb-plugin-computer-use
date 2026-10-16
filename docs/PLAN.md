@@ -1,4 +1,4 @@
-# Plan: Computer Use (fork of bb-plugin-cua-driver)
+# Plan: Desktop & Browser Agent (fork of bb-plugin-cua-driver)
 
 Forked from [juanbermudez/bb-plugin-cua-driver](https://github.com/juanbermudez/bb-plugin-cua-driver)
 at `068c7ef` (unreleased 0.2.0, built against Cua Driver 0.28.2). Plugin id

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-16
+
+- **New name and icon: Desktop & Browser Agent.** The plugin is listed in
+  the bb store separately from the Computer Use plugin it was forked from, so
+  it needs its own name. The id stays `computer-use`, so installs, settings
+  and the `/settings/plugins/computer-use` link keep working. The new icon is
+  original artwork and replaces the one derived from Cua's logo.
+
 - **Optional browser extension.** Browser Bridge for bb
   (`browser-extension/`, Chromium MV3) lets agents work in the tabs of your own browser
   in Brave, Chrome, Edge or Chromium, in background tabs, through the

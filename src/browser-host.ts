@@ -72,7 +72,7 @@ function shellQuote(value: string): string {
 export function launcherScript(layout: BridgeLayout, runtime: string): string {
   return [
     "#!/bin/sh",
-    "# Browser Bridge for bb native host launcher, written by the Computer Use bb plugin.",
+    "# Browser Bridge for bb native host launcher, written by the Desktop & Browser Agent bb plugin.",
     `ELECTRON_RUN_AS_NODE=1 AGENT_BRIDGE_SOCKETS=${shellQuote(layout.sockets)} exec ${shellQuote(runtime)} ${shellQuote(layout.script)} "$@"`,
     "",
   ].join("\n");

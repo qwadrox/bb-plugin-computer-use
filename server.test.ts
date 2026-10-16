@@ -227,7 +227,7 @@ describe("exposure policy", () => {
 
     const managed = structured(await harness.behavior.callAgentTool("cua_call", { tool: "start_session", arguments: {} }));
     expect(managed.isError).toBe(true);
-    expect(text(managed)).toMatch(/managed by the Computer Use plugin/);
+    expect(text(managed)).toMatch(/managed by the Desktop & Browser Agent plugin/);
     expect(toolCalls()).toHaveLength(2);
   });
 
@@ -564,7 +564,7 @@ describe("setup guidance", () => {
 
     const blocked = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(blocked.isError).toBe(true);
-    expect(text(blocked)).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
+    expect(text(blocked)).toContain("[Open Desktop & Browser Agent settings](/settings/plugins/computer-use)");
     expect(text(blocked)).toMatch(/Install Cua Driver/);
     expect(toolCalls()).toHaveLength(0);
   });
@@ -590,7 +590,7 @@ describe("setup guidance", () => {
     });
     const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(result.isError).toBe(true);
-    expect(text(result)).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
+    expect(text(result)).toContain("[Open Desktop & Browser Agent settings](/settings/plugins/computer-use)");
     expect(text(result)).toMatch(/Driver detail:.*permissions_pending/);
     expect(toolCalls()).toHaveLength(1);
     const lastCall = hostCalls.map((call) => call.method).lastIndexOf("callTool");

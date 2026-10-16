@@ -1,6 +1,6 @@
 # Browser Bridge for bb
 
-An optional Chromium extension (Manifest V3) for the Computer Use bb plugin.
+An optional Chromium extension (Manifest V3) for the Desktop & Browser Agent bb plugin.
 It lets coding agents in bb work in your browser tabs, in
 the background, while you keep using the browser. Works in Brave, Chrome, Edge
 and Chromium on macOS and Linux.
@@ -41,7 +41,7 @@ Open `brave://extensions` or `chrome://extensions`, turn on Developer mode,
 choose **Load unpacked**, and pick `browser-extension/dist`. The manifest's
 `key` pins the unpacked id to `apeidchlabamkkpmahikoiingkhdcagf`, which the
 bridge's `allowed_origins` names. Then turn the extension on in bb under
-**Settings → Plugins → Computer Use → Browser extension** and install the
+**Settings → Plugins → Desktop & Browser Agent → Browser extension** and install the
 bridge there.
 
 `npm run test:browser` (from the root, after the build) runs the extension end

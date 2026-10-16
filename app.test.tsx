@@ -77,7 +77,7 @@ describe("settings sections", () => {
       { id: "agent-tools", title: "Agent tools" },
       { id: "driver-machines", title: "Cua Driver on your machines" },
       { id: "browser-extension", title: "Browser extension" },
-      { id: "about", title: "About Computer Use" },
+      { id: "about", title: "About Desktop & Browser Agent" },
     ]);
   });
 
@@ -548,7 +548,7 @@ describe("settings sections", () => {
     slot.lifecycle.unmount();
   });
 
-  it("credits and links to Cua from the Computer Use information card", async () => {
+  it("credits and links to Cua from the Desktop & Browser Agent information card", async () => {
     const app = await loadPluginApp(() => import("./app"));
     const section = app.settingsSections.find((candidate) => candidate.id === "about")!;
     const slot = renderSlot(section, {}, { rpc: {} });

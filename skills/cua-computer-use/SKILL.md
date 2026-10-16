@@ -20,7 +20,7 @@ names here carry the `cua_` prefix.
   unless they enabled them, and the browser or clipboard tools may be off too.
   When a tool says it is off, tell the user, and do not reach the same result
   another way (shell, `osascript`, AppleScript, `kill`, another automation
-  tool). They can turn it on in Settings → Plugins → Computer Use → Agent tools.
+  tool). They can turn it on in Settings → Plugins → Desktop & Browser Agent → Agent tools.
 - The user may have asked to approve sensitive calls (clipboard text,
   whole-screen capture, file uploads and downloads, attaching to a signed-in
   browser, the first `browser_*` call in a thread). Such a call waits for their answer in the thread; if it is not

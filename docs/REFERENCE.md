@@ -1,4 +1,4 @@
-# Reference: Computer Use for bb
+# Reference: Desktop & Browser Agent for bb
 
 Everything the [README](../README.md) leaves out: setup by hand, every setting, how routing, exposure and the browser extension behave, and the safety model. Development notes are in [AGENTS.md](../AGENTS.md).
 
@@ -44,7 +44,7 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 
 ## Configure
 
-Open **Settings → Plugins → Computer Use**, or use the CLI.
+Open **Settings → Plugins → Desktop & Browser Agent**, or use the CLI.
 
 Each enrolled machine has an expandable checklist for its bb connection, Cua
 Driver installation, service state, and macOS Accessibility, Screen Recording,
@@ -144,7 +144,7 @@ pauses agents until you resume them from the extension.
 
 Nothing changes until you turn it on:
 
-1. **Settings → Plugins → Computer Use → Browser extension**: tick **Offer
+1. **Settings → Plugins → Desktop & Browser Agent → Browser extension**: tick **Offer
    browser_\* tools**, then **Install bridge** on the machine. The bridge is a
    small native messaging host (`~/Library/Application Support/agent-browser-bridge`
    on macOS, `~/.local/share/agent-browser-bridge` on Linux) plus one manifest
@@ -204,7 +204,7 @@ also appear on the first screenshot. The CLI equivalents are `bb cua install --y
 
 Before each computer-use action, the plugin checks a recent readiness snapshot.
 If the driver or a required macOS permission is missing, it stops before the
-action and returns a direct link to **Settings → Plugins → Computer Use** with
+action and returns a direct link to **Settings → Plugins → Desktop & Browser Agent** with
 the exact recovery step. Permission failures returned later by Cua Driver are
 normalized into the same guided recovery instead of inviting blind retries.
 

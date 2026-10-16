@@ -5,7 +5,7 @@
  * (newline-delimited JSON on a Unix socket only this user can open). It exits
  * when the browser closes stdin. Node built-ins only.
  */
-export const BRIDGE_SCRIPT = String.raw`// Browser Bridge for bb native host. Written by the Computer Use bb plugin; do not edit.
+export const BRIDGE_SCRIPT = String.raw`// Browser Bridge for bb native host. Written by the Desktop & Browser Agent bb plugin; do not edit.
 import { createServer } from "node:net";
 import { chmodSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";

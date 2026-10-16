@@ -291,16 +291,16 @@ function updateLine(status: DriverStatus): string | null {
 function setupGuidance(status: DriverStatus, hostId: string): string | null {
   if (!status.installed) {
     return [
-      "Computer Use setup is required because Cua Driver is not installed on this machine.",
-      `[Open Computer Use settings](${SETTINGS_PATH}), expand this machine, and select **Install Cua Driver**.`,
+      "Desktop & Browser Agent setup is required because Cua Driver is not installed on this machine.",
+      `[Open Desktop & Browser Agent settings](${SETTINGS_PATH}), expand this machine, and select **Install Cua Driver**.`,
       `CLI alternative: \`bb cua install --yes --host ${hostId}\`. Retry the tool after the checklist shows Ready.`,
     ].join("\n\n");
   }
   const missing = missingMacPermissions(status);
   if (missing.length === 0) return null;
   return [
-    `Computer Use setup is required. macOS permissions are missing or unconfirmed: **${missing.join(", ")}**.`,
-    `[Open Computer Use settings](${SETTINGS_PATH}), expand this machine, and select **Grant macOS permissions**. Approve the system prompts; a one-time direct-capture prompt may also appear on the first screenshot.`,
+    `Desktop & Browser Agent setup is required. macOS permissions are missing or unconfirmed: **${missing.join(", ")}**.`,
+    `[Open Desktop & Browser Agent settings](${SETTINGS_PATH}), expand this machine, and select **Grant macOS permissions**. Approve the system prompts; a one-time direct-capture prompt may also appear on the first screenshot.`,
     `CLI alternative: \`bb cua grant --host ${hostId}\`. Retry the tool after the checklist shows Ready.`,
   ].join("\n\n");
 }
@@ -700,9 +700,9 @@ export default async function plugin(bb: BbPluginApi) {
   function offMessage(driverName: string): string {
     const group = groupOf(driverName);
     if (!enabledGroups().has(group)) {
-      return `${driverName} belongs to the ${group} tools, which are turned off in Computer Use settings. Do not reach the same capability another way; if the task needs it, ask the user to turn on **${group === "browser" ? "Browser tools" : "Clipboard tools"}** in [Computer Use settings](${SETTINGS_PATH}).`;
+      return `${driverName} belongs to the ${group} tools, which are turned off in Desktop & Browser Agent settings. Do not reach the same capability another way; if the task needs it, ask the user to turn on **${group === "browser" ? "Browser tools" : "Clipboard tools"}** in [Desktop & Browser Agent settings](${SETTINGS_PATH}).`;
     }
-    return `${driverName} is turned off for agents in Computer Use settings. Do not reach the same capability another way; if the task needs it, ask the user to allow it under **Tools** in [Computer Use settings](${SETTINGS_PATH}) or with \`bb cua expose ${driverName} call\`.`;
+    return `${driverName} is turned off for agents in Desktop & Browser Agent settings. Do not reach the same capability another way; if the task needs it, ask the user to allow it under **Tools** in [Desktop & Browser Agent settings](${SETTINGS_PATH}) or with \`bb cua expose ${driverName} call\`.`;
   }
 
   /**
@@ -769,13 +769,13 @@ export default async function plugin(bb: BbPluginApi) {
     options: { threadId?: string; signal?: AbortSignal },
   ): Promise<ToolCallResult> {
     if (isManaged(name)) {
-      return failure(`${name} is managed by the Computer Use plugin: every thread gets its own Cua session automatically.`);
+      return failure(`${name} is managed by the Desktop & Browser Agent plugin: every thread gets its own Cua session automatically.`);
     }
     const known = catalogFor(hostId).byName.get(name);
     if (known !== undefined && resolveExposure(name, known, exposureInputs()) === "off") return failure(offMessage(name));
     if (!snapshot.signedInBrowserProfiles && requestsExistingProfile(name, args)) {
       return failure(
-        `Attaching to a signed-in browser profile is turned off. Ask the user to turn on **Signed-in browser profiles** in [Computer Use settings](${SETTINGS_PATH}) if they want this, or work in a separate browser.`,
+        `Attaching to a signed-in browser profile is turned off. Ask the user to turn on **Signed-in browser profiles** in [Desktop & Browser Agent settings](${SETTINGS_PATH}) if they want this, or work in a separate browser.`,
       );
     }
     const status = await statusForTool(hostId, options.signal);
@@ -799,8 +799,8 @@ export default async function plugin(bb: BbPluginApi) {
     const recovery =
       setupGuidance(refreshed, hostId) ??
       [
-        "Computer Use was blocked by a system permission while using Cua Driver.",
-        `[Open Computer Use settings](${SETTINGS_PATH}), expand this machine, run **Grant macOS permissions**, and retry after the checklist shows Ready.`,
+        "Desktop & Browser Agent was blocked by a system permission while using Cua Driver.",
+        `[Open Desktop & Browser Agent settings](${SETTINGS_PATH}), expand this machine, run **Grant macOS permissions**, and retry after the checklist shows Ready.`,
         `CLI alternative: \`bb cua grant --host ${hostId}\`.`,
       ].join("\n\n");
     return failure(`${recovery}\n\nDriver detail: ${toolResultText(result).trim().slice(0, 500)}`);
@@ -823,7 +823,7 @@ export default async function plugin(bb: BbPluginApi) {
       const message = errorMessage(error);
       bb.log.warn(`${toolName} failed on host ${hostId}: ${message}`);
       return failure(
-        `${message}\n\n[Open Computer Use settings](${SETTINGS_PATH}), expand this machine, check its setup, and retry.`,
+        `${message}\n\n[Open Desktop & Browser Agent settings](${SETTINGS_PATH}), expand this machine, check its setup, and retry.`,
       );
     }
   }
@@ -961,7 +961,7 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<ToolCallResult> {
     if (!browserExtension) {
       return failure(
-        `The browser extension is turned off. Do not reach the same capability another way; if the task needs it, ask the user to turn on **Browser extension** in [Computer Use settings](${SETTINGS_PATH}).`,
+        `The browser extension is turned off. Do not reach the same capability another way; if the task needs it, ask the user to turn on **Browser extension** in [Desktop & Browser Agent settings](${SETTINGS_PATH}).`,
       );
     }
     const refusal = await approvalRefusal(tool.name, args, options, BROWSER_ACTION, tool.name);

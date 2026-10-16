@@ -1,4 +1,4 @@
-# Specification: Computer Use for bb
+# Specification: Desktop & Browser Agent for bb
 
 Status: the v0.1 specification, inherited from bb-plugin-cua-driver. Tool
 selection, exposure, drift and installs changed in 0.3.0: see
