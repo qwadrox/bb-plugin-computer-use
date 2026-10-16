@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <mask id="m"><rect width="24" height="24" fill="#fff"/><path d="M14.776 15.261a0.373 0.373 0 0 1 0.485 -0.485l6.75 2.625a0.375 0.375 0 0 1 -0.025 0.707l-2.583 0.801a0.75 0.75 0 0 0 -0.495 0.495l-0.8 2.582a0.375 0.375 0 0 1 -0.707 0.025z" stroke="#000" stroke-width="4" stroke-linejoin="round"/></mask>
-  <rect x="1" y="1" width="19" height="19" rx="4" fill="#6d28d9" mask="url(#m)"/>
-  <path d="M14.776 15.261a0.373 0.373 0 0 1 0.485 -0.485l6.75 2.625a0.375 0.375 0 0 1 -0.025 0.707l-2.583 0.801a0.75 0.75 0 0 0 -0.495 0.495l-0.8 2.582a0.375 0.375 0 0 1 -0.707 0.025z" fill="#6d28d9" stroke="#6d28d9" stroke-width="2" stroke-linejoin="round"/>
-  <g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4.75 4.5V11.75M11.05 4.5V11.75"/><circle cx="6.6" cy="9.9" r="1.85"/><circle cx="12.9" cy="9.9" r="1.85"/></g>
+  <rect width="24" height="24" rx="5.5" fill="#6d28d9"/>
+  <g fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 3.75V13M12 3.75V13"/><circle cx="6.75" cy="10.75" r="2.25"/><circle cx="14.25" cy="10.75" r="2.25"/></g>
+  <path d="M16.02 16.409a0.299 0.299 0 0 1 0.388 -0.388l5.4 2.1a0.3 0.3 0 0 1 -0.02 0.566l-2.066 0.641a0.6 0.6 0 0 0 -0.396 0.396l-0.64 2.066a0.3 0.3 0 0 1 -0.566 0.02z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
 </svg>
