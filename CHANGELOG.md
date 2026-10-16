@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Clearer wording in agent messages, approval cards and `bb cua browser`.**
+  Refusals name the **Agent tools** card and the **Offer `browser_*` tools
+  (extension)** switch. Approval cards no longer repeat the tool name in their
+  text, and an extension approval is titled "Allow agents in your browser?"
+  and says it covers every `browser_*` tool in the thread. Activity rows read
+  "the browser" throughout, and extension scrolling reads "Scrolling the page".
+  `bb cua browser` says "set up" and "not supported on this system", prints the
+  Web Store id and the unpacked build id on separate lines, and shows the
+  extension version as `v0.1.1`. A missing bridge tells the agent to press
+  **Install bridge** in the **Browser extension** card.
+- **Settings page:** tools in a group that is off (browser window or clipboard
+  tools) can't be changed in **Agent tools** until the group is on. **Provider's
+  own** is disabled for providers without their own computer use. The
+  **Browser extension** card shows setup steps only while setup is incomplete,
+  and no longer repeats the connected browser.
 - **New icons:** the plugin icon is a window with a pointer and the letters
   "bb"; the Browser Bridge for bb extension uses the same design on a purple
   tile (store screenshot re-rendered).

@@ -5,7 +5,7 @@ import type { BrowserBridgeState, DriverStatus, InstallState, ToolCallResult } f
 import { driftView, formatDrift, type DriftReport } from "./drift.js";
 import { errorMessage } from "./errors.js";
 import { EXPOSURES, type Exposure } from "./exposure.js";
-import { EXTENSION_STORE_URL, UNPACKED_EXTENSION_ID } from "./links.js";
+import { EXTENSION_STORE_URL, STORE_EXTENSION_ID, UNPACKED_EXTENSION_ID } from "./links.js";
 import { PROVIDER_OVERRIDES, ROUTING_MODES, parseRoutingMode, type ProviderOverride, type RoutingMode } from "./policy.js";
 import { TESTED_DRIVER_VERSION } from "./snapshot.js";
 import type { CallOptions, IndexedCatalog, State, ToolView } from "../server.js";
@@ -310,12 +310,12 @@ export function cuaCli(deps: CuaCliDeps): PluginCliRegistration {
           }
           const lines = [
             `Browser extension tools: ${browserExtensionOn() ? "on" : "off"}`,
-            `Bridge: ${!bridge.supported ? "not supported on this platform" : bridge.installed ? "installed" : "not installed"}`,
+            `Bridge: ${!bridge.supported ? "not supported on this system" : bridge.installed ? "installed" : "not installed"}`,
             ...bridge.browsers
               .filter((entry) => entry.detected)
-              .map((entry) => `  ${entry.name}: ${entry.registered ? "registered" : "not registered"}`),
-            `Connected: ${bridge.connections.length === 0 ? "none" : bridge.connections.map((entry) => `${entry.browser} ${entry.version} (extension ${entry.extension})`).join(", ")}`,
-            `Chrome Web Store: ${EXTENSION_STORE_URL}\nExtension id: ${UNPACKED_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
+              .map((entry) => `  ${entry.name}: ${entry.registered ? "set up" : "not set up"}`),
+            `Connected: ${bridge.connections.length === 0 ? "none" : bridge.connections.map((entry) => `${entry.browser} ${entry.version} (extension v${entry.extension})`).join(", ")}`,
+            `Chrome Web Store: ${EXTENSION_STORE_URL}\nWeb Store id: ${STORE_EXTENSION_ID}\nUnpacked build id: ${UNPACKED_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
           ];
           return { exitCode: 0, stdout: lines.join("\n") };
         }

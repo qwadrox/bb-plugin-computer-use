@@ -66,7 +66,7 @@ function InstallerOutput({ host }: { host: Host }) {
     <Disclosure
       key={`${host.id}:${host.install.startedAt ?? "idle"}`}
       label="Installation details"
-      meta={host.install.tail.length > 0 ? `${host.install.tail.length} lines` : undefined}
+      meta={host.install.tail.length > 0 ? `${host.install.tail.length} line${host.install.tail.length === 1 ? "" : "s"}` : undefined}
       forceOpen={host.install.ok === false}
     >
       <pre
@@ -137,7 +137,7 @@ export function InstallDialog({
           <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
             <p>
               This plugin release was tested with <strong className="font-medium text-foreground">v{testedVersion}</strong>
-              {current !== null ? <> and this machine runs v{current}</> : null}. A newer release can add or change tools; Desktop & Browser Agent then keeps tools it has not reviewed off until you allow them.
+              {current !== null ? <> and this machine runs {current === testedVersion ? "it" : `v${current}`}</> : null}. A newer release can add or change tools; Desktop & Browser Agent then keeps new tools that are not read-only off until you allow them.
             </p>
             {installed ? (
               <p>The running driver is stopped first and restarted afterwards.</p>

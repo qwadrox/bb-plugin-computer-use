@@ -53,7 +53,7 @@ export function describeDecision(decision: ProviderDecision): string {
     case "native":
       return "Provider's own computer use";
     case "off":
-      return "No computer use";
+      return "No Cua Driver tools";
   }
 }
 

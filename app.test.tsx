@@ -125,6 +125,39 @@ describe("settings sections", () => {
     await waitFor(() => expect(calls).toEqual([{ enabled: true }, { hostId: "host_1", action: "install" }]));
     expect(slot.getByText("/src/plugin/browser-extension/dist")).toBeTruthy();
     expect(slot.getByText(/Brave: not set up/)).toBeTruthy();
+    expect(slot.queryByRole("button", { name: "Setup steps" })).toBeNull();
+    expect(slot.getByRole("button", { name: "About the extension's browser_* tools" })).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("collapses the browser extension setup steps once the bridge is installed and a browser is connected", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const section = app.settingsSections.find((candidate) => candidate.id === "browser-extension")!;
+    const view = {
+      enabled: true,
+      extensionId: "apeidchlabamkkpmahikoiingkhdcagf",
+      extensionDir: null,
+      hosts: [
+        {
+          id: "host_1",
+          name: "laptop",
+          bridge: {
+            supported: true,
+            installed: true,
+            browsers: [{ id: "brave", name: "Brave", detected: true, registered: true }],
+            connections: [{ browser: "Brave", version: "140.0", extension: "0.1.1", pid: 1 }],
+          },
+          error: null,
+        },
+      ],
+    };
+    const slot = renderSlot(section, {}, { rpc: { browserState: () => view } });
+
+    const setup = await slot.findByRole("button", { name: "Setup steps" });
+    const region = document.getElementById(setup.getAttribute("aria-controls")!);
+    expect(region?.getAttribute("data-state")).toBe("closed");
+    expect(slot.getByText(/Brave: set up · connected: Brave \(extension v0.1.1\)/)).toBeTruthy();
+    expect(slot.queryByText(/Connected: Brave/)).toBeNull();
     slot.lifecycle.unmount();
   });
 
@@ -183,6 +216,9 @@ describe("settings sections", () => {
     expect(disclosure.classList.contains("rounded-md")).toBe(true);
     expect(disclosureRegion?.classList.contains("grid-rows-[1fr]")).toBe(true);
     const select = await slot.findByLabelText("Codex override");
+    const piOwn = Array.from((slot.getByLabelText("Pi override") as HTMLSelectElement).options).find((option) => option.value === "native");
+    expect(piOwn?.textContent).toBe("Provider's own (none)");
+    expect(piOwn?.disabled).toBe(true);
     expect(disclosureRegion?.textContent).not.toContain("has own computer use");
     fireEvent.change(select, { target: { value: "cua" } });
     await slot.findByRole("button", { name: /Own routing: Codex/ });
@@ -548,6 +584,25 @@ describe("settings sections", () => {
     slot.lifecycle.unmount();
   });
 
+  it("disables a tool's exposure while its group is switched off", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const section = app.settingsSections.find((candidate) => candidate.id === "agent-tools")!;
+    const state = {
+      ...baseState,
+      groups: { browser: false, clipboard: true },
+      tools: [
+        { name: "navigate_browser", group: "browser", exposure: "off", defaultExposure: "tool", source: "reviewed", override: null, groupEnabled: false, readOnly: false, summary: "Open a URL." },
+      ],
+    };
+    const slot = renderSlot(section, {}, { rpc: { getState: () => state } });
+
+    fireEvent.click(await slot.findByRole("button", { name: /Customize individual tools/ }));
+    const select = (await slot.findByLabelText("navigate_browser exposure")) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(slot.getByText("Browser window tools off")).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
   it("credits and links to Cua from the Desktop & Browser Agent information card", async () => {
     const app = await loadPluginApp(() => import("./app"));
     const section = app.settingsSections.find((candidate) => candidate.id === "about")!;
@@ -588,7 +643,8 @@ describe("approval requests", () => {
         submit: async (value: unknown) => void answers.push(value),
         cancel: async () => void answers.push("cancelled"),
       });
-      expect((await slot.findByText(/The agent wants to upload files from this machine to a web page/)).textContent).toContain("cua_browser_set_input_files");
+      // The title names the tool, so the body does not repeat it.
+      expect((await slot.findByText(/The agent wants to upload files from this machine to a web page/)).textContent).not.toContain("cua_browser_set_input_files");
       expect(slot.getByText(/\/tmp\/a\.pdf/)).toBeTruthy();
       fireEvent.click(slot.getByRole("button", { name: button }));
       await waitFor(() => expect(answers).toEqual([expected]));

@@ -104,7 +104,7 @@ do on the machine, Cua Driver's own permission mode decides.
 | Setting | Default | Effect |
 | --- | --- | --- |
 | Browser window tools | on | Cua Driver's `cua_browser_*` tools, no extension needed. Off turns the group off, `cua_call` included; the extension's `browser_*` tools have their own switch. |
-| Clipboard tools | on | Off turns `clipboard_read` / `clipboard_write` off, `cua_call` included. |
+| Clipboard tools | on | Off turns `cua_clipboard_read` / `cua_clipboard_write` off, `cua_call` included. |
 | Signed-in browser profiles | off | Lets the browser window tools attach to a signed-in Chrome, Edge or Brave window (see [Signed-in browser profiles](#signed-in-browser-profiles)). |
 | Browser extension | off | Offers the `browser_*` tools of the optional extension (see [Browser extension](#browser-extension-optional)). Set in its own card or with `bb cua browser on\|off`. |
 | Ask before sensitive actions | off | Asks in the thread before a sensitive call runs (see [Permissions and safety](#permissions-and-safety)). Off runs them without asking. |
@@ -286,7 +286,9 @@ thread turn ──▶ bb server (plugin server.ts)
   `install_ffmpeg`, `stop_recording` and `page` are off by default and do not
   ask when exposed. **Allow once**, **Allow for this thread** (until the
   thread is archived or the plugin reloads), or **Don't allow**; an
-  unanswered request is refused after ten minutes. `bb cua call` asks in the
+  unanswered request is refused after ten minutes. The first `browser_*` call
+  in a thread asks under "Allow agents in your browser?", and one answer
+  covers every `browser_*` tool in that thread. `bb cua call` asks in the
   thread it runs from; from a terminal outside any thread it runs, since that
   is you. Like the other settings, this stops mistakes and injected
   instructions, not an agent that runs `bb` in a shell: bb lets a thread

@@ -360,7 +360,7 @@ export default async function plugin(bb: BbPluginApi) {
     clipboardTools: {
       type: "boolean",
       label: "Clipboard tools",
-      description: "Offer clipboard_read and clipboard_write. Off turns them off, cua_call included.",
+      description: "Offer cua_clipboard_read and cua_clipboard_write. Off turns them off, cua_call included.",
       default: true,
     },
     signedInBrowserProfiles: {
@@ -603,7 +603,7 @@ export default async function plugin(bb: BbPluginApi) {
         running: false,
         ok: false,
         step: "failed",
-        tail: [...install.tail, "The host worker exited while the installer was running."],
+        tail: [...install.tail, "bb lost contact with this machine while the installer was running."],
       });
     }
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "worker-exit", hostId });
@@ -680,7 +680,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (!enabledGroups().has(group)) {
       return `${driverName} belongs to the ${group} tools, which are turned off in Desktop & Browser Agent settings. Do not reach the same capability another way; if the task needs it, ask the user to turn on **${group === "browser" ? "Browser window tools (Cua Driver)" : "Clipboard tools"}** in [Desktop & Browser Agent settings](${SETTINGS_PATH}).`;
     }
-    return `${driverName} is turned off for agents in Desktop & Browser Agent settings. Do not reach the same capability another way; if the task needs it, ask the user to allow it under **Tools** in [Desktop & Browser Agent settings](${SETTINGS_PATH}) or with \`bb cua expose ${driverName} call\`.`;
+    return `${driverName} is turned off for agents in Desktop & Browser Agent settings. Do not reach the same capability another way; if the task needs it, ask the user to allow it under **Agent tools** in [Desktop & Browser Agent settings](${SETTINGS_PATH}) or with \`bb cua expose ${driverName} call\`.`;
   }
 
   /**
@@ -692,7 +692,7 @@ export default async function plugin(bb: BbPluginApi) {
     name: string,
     args: Record<string, unknown>,
     options: CallOptions,
-    action: { key: string; reason: string } | null = sensitiveAction(name, args),
+    action: { key: string; reason: string; title?: string } | null = sensitiveAction(name, args),
     shownName = agentToolName(name),
   ): Promise<ToolCallResult | null> {
     if (!settingsNow.confirmSensitiveTools || options.threadId === undefined) return null;
@@ -702,7 +702,7 @@ export default async function plugin(bb: BbPluginApi) {
       {
         threadId: options.threadId,
         rendererId: APPROVAL_RENDERER,
-        title: `Allow ${shownName}?`,
+        title: action.title ?? `Allow ${shownName}?`,
         payload: {
           tool: name,
           shownName,
@@ -925,9 +925,12 @@ export default async function plugin(bb: BbPluginApi) {
     });
     registered.add(meta.name);
   }
+  // One approval covers every browser_* tool in the thread, so the title does not name one.
   const BROWSER_ACTION = {
     key: "browser_extension",
-    reason: "work in the tabs of your own signed-in browser, through the Browser Bridge for bb extension",
+    title: "Allow agents in your browser?",
+    reason:
+      "work in the tabs of your own signed-in browser, through the Browser Bridge for bb extension. One answer covers every browser_* tool in this thread",
   };
 
   /** One browser_* call: the setting, the approval, then the extension on the thread's machine. */
@@ -939,7 +942,7 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<ToolCallResult> {
     if (!browserExtension) {
       return failure(
-        `The browser extension is turned off. Do not reach the same capability another way; if the task needs it, ask the user to turn on **Browser extension** in [Desktop & Browser Agent settings](${SETTINGS_PATH}).`,
+        `The browser extension is turned off. Do not reach the same capability another way; if the task needs it, ask the user to turn on **Offer \`browser_*\` tools (extension)** in the **Browser extension** card of [Desktop & Browser Agent settings](${SETTINGS_PATH}).`,
       );
     }
     const refusal = await approvalRefusal(tool.name, args, options, BROWSER_ACTION, tool.name);

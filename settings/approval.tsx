@@ -42,9 +42,7 @@ export function ApproveToolCard({ interaction, submit, cancel }: PluginPendingIn
         {request === null ? (
           "The agent wants to use a sensitive Cua Driver tool."
         ) : (
-          <>
-            The agent wants to {request.reason} with <code className="text-foreground">{request.shownName}</code>.
-          </>
+          `The agent wants to ${request.reason}.`
         )}
       </p>
       {request !== null && request.arguments !== "{}" ? (

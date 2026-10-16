@@ -104,7 +104,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
       ref: ref.optional(),
       browser,
     }) satisfies z.ZodType<BridgeParams["scroll"]>,
-    labels: { pending: "Scrolling", completed: "Scrolled" },
+    labels: { pending: "Scrolling the page", completed: "Scrolled the page" },
   },
   {
     name: "browser_navigate",
@@ -115,7 +115,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
       url: z.string().min(1).describe("http(s) URL, about:blank, back, forward, or reload"),
       browser,
     }) satisfies z.ZodType<BridgeParams["navigate"]>,
-    labels: { pending: "Navigating", completed: "Navigated" },
+    labels: { pending: "Navigating the page", completed: "Navigated the page" },
   },
   {
     name: "browser_screenshot",
@@ -143,14 +143,23 @@ function text(value: string, isError = false): ToolCallResult {
   return { content: [{ type: "text", text: value }], isError };
 }
 
+/** What the user has to do for a setup code, pointing at the card that does it. */
+function setupStep(code: string, settingsPath: string): string {
+  const settings = `[Desktop & Browser Agent settings](${settingsPath})`;
+  if (code === "not_installed") {
+    return `Ask the user to press **Install bridge** for this machine in the **Browser extension** card of ${settings}.`;
+  }
+  if (code === "not_connected") {
+    return `Ask the user to open a browser with the Browser Bridge for bb extension, or to check the **Browser extension** card of ${settings}.`;
+  }
+  return `Tell the user that the browser extension is not available on this system (see the **Browser extension** card of ${settings}).`;
+}
+
 /** Turns the extension's answer into what the agent sees. */
 export function browserToolResult(tool: BrowserTool, reply: BrowserCallResult, settingsPath: string): ToolCallResult {
   if (!reply.ok) {
     if (SETUP_CODES.has(reply.code)) {
-      return text(
-        `${reply.message}\n\nThe Browser Bridge for bb needs setup by the user: stop and give them the [Desktop & Browser Agent settings](${settingsPath}) link (Browser extension section). Do not work around it with other browser tools unless the user says so.`,
-        true,
-      );
+      return text(`${reply.message}\n\n${setupStep(reply.code, settingsPath)} Do not work around it with other browser tools unless the user says so.`, true);
     }
     return text(`${tool.name} failed (${reply.code}): ${reply.message}`, true);
   }

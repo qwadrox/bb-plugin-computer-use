@@ -29,7 +29,7 @@ export function ProviderOverridesSettings() {
           ? "Every provider follows the routing mode"
           : `Own routing: ${overridden.map((provider) => provider.displayName).join(", ")}`
       }
-      meta={`${state.providers.length} providers`}
+      meta={`${state.providers.length} provider${state.providers.length === 1 ? "" : "s"}`}
     >
       <div data-provider-list className="mt-2 divide-y divide-border/60">
         {state.providers.map((provider) => (
@@ -52,11 +52,15 @@ export function ProviderOverridesSettings() {
                 )
               }
             >
-              {OVERRIDES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              {OVERRIDES.map((option) => {
+                // A provider without computer use of its own has no "own" routing to pick.
+                const unavailable = option.value === "native" && !provider.native;
+                return (
+                  <option key={option.value} value={option.value} disabled={unavailable}>
+                    {unavailable ? "Provider's own (none)" : option.label}
+                  </option>
+                );
+              })}
             </select>
           </div>
         ))}

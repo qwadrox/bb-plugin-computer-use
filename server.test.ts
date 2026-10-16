@@ -738,14 +738,19 @@ describe("browser extension", () => {
       browserReplies: [
         { ok: false, code: "not_connected", message: "No browser with the Browser Bridge for bb extension is connected." },
         { ok: false, code: "tab_not_shared", message: "Tab 3 is not shared with agents." },
+        { ok: false, code: "not_installed", message: "The browser bridge is not installed on this machine." },
       ],
     });
     await harness.behavior.runCli(["browser", "on"]);
     const setup = structured(await harness.behavior.callAgentTool("browser_tabs", {}));
     expect(setup.isError).toBe(true);
-    expect(text(setup)).toMatch(/needs setup by the user.*\/settings\/plugins\/computer-use/s);
+    expect(text(setup)).toMatch(/Ask the user to open a browser with the Browser Bridge for bb extension.*\*\*Browser extension\*\* card of .*\/settings\/plugins\/computer-use/s);
     const refused = structured(await harness.behavior.callAgentTool("browser_read", { tab_id: 3 }));
     expect(text(refused)).toBe("browser_read failed (tab_not_shared): Tab 3 is not shared with agents.");
+    const missing = structured(await harness.behavior.callAgentTool("browser_open", { url: "https://example.com" }));
+    expect(missing.isError).toBe(true);
+    expect(text(missing)).toMatch(/is not installed on this machine\.\n\nAsk the user to press \*\*Install bridge\*\* for this machine in the \*\*Browser extension\*\* card of /);
+    expect(text(missing)).not.toMatch(/needs setup by the user/);
   });
 
   it("returns screenshots as images", async () => {
@@ -762,8 +767,12 @@ describe("browser extension", () => {
     await harness.behavior.runCli(["browser", "on"]);
     const pending = harness.behavior.callAgentTool("browser_open", { url: "https://example.com" }, { threadId: "thr_1" });
     const request = await asked(harness);
-    expect(request).toMatchObject({ title: "Allow browser_open?" });
-    expect(request.payload).toMatchObject({ tool: "browser_open", shownName: "browser_open", reason: expect.stringMatching(/Browser Bridge for bb/) });
+    expect(request).toMatchObject({ title: "Allow agents in your browser?" });
+    expect(request.payload).toMatchObject({
+      tool: "browser_open",
+      shownName: "browser_open",
+      reason: expect.stringMatching(/Browser Bridge for bb.*covers every browser_\* tool in this thread/),
+    });
     harness.behavior.submitInteraction(request.id, { allow: "thread" });
     expect(structured(await pending).isError).toBe(false);
     expect(structured(await harness.behavior.callAgentTool("browser_tabs", {}, { threadId: "thr_1" })).isError).toBe(false);
@@ -784,6 +793,9 @@ describe("browser extension", () => {
     expect(removed.hosts[0]?.bridge).toBeDefined();
     const on = (await harness.behavior.callRpc("setBrowserExtension", { enabled: true })) as typeof view;
     expect(on.enabled).toBe(true);
-    expect((await harness.behavior.runCli(["browser", "status"])).stdout).toMatch(/Browser extension tools: on[\s\S]*Brave: registered[\s\S]*Connected: Brave 141\.0/);
+    const status = (await harness.behavior.runCli(["browser", "status"])).stdout;
+    expect(status).toMatch(/Browser extension tools: on[\s\S]*Brave: set up[\s\S]*Connected: Brave 141\.0 \(extension v/);
+    expect(status).toMatch(/Web Store id: \S+\nUnpacked build id: \S+/);
+    expect(status).not.toMatch(/registered|Extension id:/);
   });
 });

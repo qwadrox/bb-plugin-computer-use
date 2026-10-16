@@ -36,7 +36,7 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "driver-machines",
     title: "Cua Driver on your machines",
-    description: "Manage Cua Driver on the machines running your threads.",
+    description: "Install, permissions and version of Cua Driver on each machine that runs your threads.",
     component: DriverMachinesSettings,
   });
   app.slots.settingsSection({

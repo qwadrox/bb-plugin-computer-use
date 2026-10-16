@@ -40,9 +40,9 @@ npm run build:extension     # writes browser-extension/dist
 Open `brave://extensions` or `chrome://extensions`, turn on Developer mode,
 choose **Load unpacked**, and pick `browser-extension/dist`. The manifest's
 `key` pins the unpacked id to `apeidchlabamkkpmahikoiingkhdcagf`, which the
-bridge's `allowed_origins` names. Then turn the extension on in bb under
-**Settings → Plugins → Desktop & Browser Agent → Browser extension** and install the
-bridge there.
+bridge's `allowed_origins` names. Then, in bb under **Settings → Plugins → Desktop & Browser Agent**, turn on
+**Offer browser_* tools (extension)** in the **Browser extension** card and
+install the bridge there.
 
 `npm run test:browser` (from the root, after the build) runs the extension end
 to end in a throwaway headless Chromium profile.

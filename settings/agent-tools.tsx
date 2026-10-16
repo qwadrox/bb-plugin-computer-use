@@ -11,6 +11,12 @@ const EXPOSURE_LABELS: Record<Exposure, string> = {
   off: "Off",
 };
 
+/** The labels of the group switches above this list. */
+const GROUP_LABELS: Record<string, string> = {
+  browser: "Browser window tools",
+  clipboard: "Clipboard tools",
+};
+
 function ToolRow({ tool, busy, onChange }: { tool: ToolView; busy: boolean; onChange: (value: Exposure | "default") => void }) {
   return (
     <div className="group/row flex min-h-11 items-center gap-3 px-3 py-2" data-tool-row={tool.name}>
@@ -20,7 +26,7 @@ function ToolRow({ tool, busy, onChange }: { tool: ToolView; busy: boolean; onCh
           <span className="shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">new</span>
         ) : null}
         {!tool.groupEnabled ? (
-          <span className="shrink-0 text-xs text-muted-foreground">{tool.group} tools off</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{GROUP_LABELS[tool.group] ?? tool.group} off</span>
         ) : null}
         {tool.asksFirst && tool.exposure !== "off" ? (
           <span className="shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">asks first</span>
@@ -31,7 +37,7 @@ function ToolRow({ tool, busy, onChange }: { tool: ToolView; busy: boolean; onCh
         aria-label={`${tool.name} exposure`}
         className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
         value={tool.override ?? "default"}
-        disabled={busy}
+        disabled={busy || !tool.groupEnabled}
         onChange={(event) => onChange(event.target.value as Exposure | "default")}
       >
         <option value="default">Default ({EXPOSURE_LABELS[tool.defaultExposure]})</option>

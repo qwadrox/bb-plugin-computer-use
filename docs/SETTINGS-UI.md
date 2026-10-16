@@ -11,16 +11,22 @@ appearing as a nested card inside one large group:
 2. **Provider overrides** starts collapsed; its row names the providers with
    their own routing (or says every provider follows the mode) and expands to
    the provider list. A row shows its result only while it follows the mode.
+   **Provider's own** is offered only for providers that have their own
+   computer use.
 3. **Browser extension** is the optional Browser Bridge for bb. A checkbox
-   (off by default) offers the `browser_*` tools; only when it is on does the
-   card show each machine's bridge (Install bridge / Remove bridge, which
-   browsers are set up and connected), the Chrome Web Store link, the Load unpacked steps with the
-   extension folder and a Copy button, and the extension id. Like the routing
+   (off by default, labelled **Offer `browser_*` tools (extension)**) offers the
+   `browser_*` tools; only when it is on does the card show each machine's
+   bridge (Install bridge / Remove bridge, and which browsers are set up or
+   connected). The setup steps (the Chrome Web Store link, the Load unpacked
+   steps with the extension folder and a Copy button) show while setup is
+   incomplete and sit under a **Setup steps** disclosure afterwards. The card
+   also lists the Web Store id and the unpacked build id. Like the routing
    mode, the checkbox lives in plugin storage so it appears once.
 4. **Agent tools** explains the three exposures (dedicated tool, through
    `cua_call`, off), notes unreviewed tools from a newer driver, and expands to
    every driver tool with a select per row (default, tool, call, off). The
-   summary line counts each exposure.
+   summary line counts each exposure. A tool whose group is off (browser window
+   tools or clipboard tools) cannot be changed here until that group is on.
 5. **Cua Driver on your machines** gives every enrolled machine an expandable
    setup checklist, including whether its driver is the tested version and
    what drifted. Machines needing attention open automatically; manual setup

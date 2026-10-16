@@ -81,7 +81,7 @@ function setupChecks(host: Host, testedVersion: string): SetupCheck[] {
     checks.push({
       label: "Direct screen capture",
       detail: denied
-        ? "Consent was denied; run the permission guide again"
+        ? "Consent was denied; use Grant macOS permissions to run the guide again"
         : directCaptureReady
           ? undefined
           : "macOS may ask once when the first screenshot is taken",
