@@ -1,0 +1,140 @@
+# Notices a new Cua Driver release and opens a PR with its tool snapshot and
+# installer checksums. The daily check runs on Linux and ends in seconds when
+# nothing changed; the macOS job runs only for a new release.
+name: driver-drift
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Driver version, e.g. 0.37.0 (default: the newest cua-driver-rs release)"
+        required: false
+        default: ""
+      force:
+        description: "Sync even when the version is already tested or has a PR branch"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: driver-drift
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.find.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.version }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          tested=$(jq -r .driverVersion src/driver-snapshot.json)
+          if [ -n "$REQUESTED" ]; then
+            version="$REQUESTED"
+          else
+            # Upstream marks every driver release as a prerelease, so match the tag instead.
+            version=$(gh api 'repos/trycua/cua/releases?per_page=100' \
+              --jq '.[] | select(.draft == false) | .tag_name | select(test("^cua-driver-rs-v[0-9]+\\.[0-9]+\\.[0-9]+$")) | ltrimstr("cua-driver-rs-v")' \
+              | sort -V | tail -n 1)
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::no usable driver version (got '$version')"
+            exit 1
+          fi
+          echo "Tested with $tested; checking $version." | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$FORCE" != "true" ]; then
+            if [ "$version" = "$tested" ] || [ "$(printf '%s\n%s\n' "$version" "$tested" | sort -V | tail -n 1)" = "$tested" ]; then
+              echo "Nothing newer than the tested driver." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if git ls-remote --exit-code --heads origin "driver/v$version" >/dev/null; then
+              echo "driver/v$version already has a PR branch." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  sync:
+    needs: check
+    if: needs.check.outputs.version != ''
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --include=dev
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Download the driver and verify its checksum and signature
+        run: |
+          tag="cua-driver-rs-v$VERSION"
+          asset="cua-driver-rs-$VERSION-darwin-universal-binary.tar.gz"
+          dir="$RUNNER_TEMP/driver"
+          mkdir -p "$dir" && cd "$dir"
+          for file in SHA256SUMS "$asset" "$asset.sigstore.json"; do
+            curl -fsSLO "https://github.com/trycua/cua/releases/download/$tag/$file"
+          done
+          grep " $asset\$" SHA256SUMS | shasum -a 256 -c -
+          cosign verify-blob "$asset" --bundle "$asset.sigstore.json" \
+            --certificate-identity "https://github.com/trycua/cua/.github/workflows/cd-rust-cua-driver.yml@refs/tags/$tag" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          tar -xzf "$asset"
+          echo "CUA_DRIVER_BIN=$dir/cua-driver" >> "$GITHUB_ENV"
+      - name: Read its tools and installer checksums
+        run: npm run sync:tools -- --summary "$RUNNER_TEMP/summary.md"
+      # PRs opened with this workflow's token do not trigger ci.yml, so test here
+      # and put the outcome in the PR. New tools fail the exposure test by design.
+      - name: Test against the new snapshot
+        id: test
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          { npm run typecheck && npm test && npm run test:network; } 2>&1 | tee "$RUNNER_TEMP/test.log"
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        run: |
+          if git diff --quiet; then
+            echo "Cua Driver $VERSION matches the committed snapshot; no PR needed." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          branch="driver/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add src/driver-snapshot.json src/driver-installer.json
+          git commit -m "Track Cua Driver $VERSION"
+          git push --force origin "$branch"
+          {
+            cat "$RUNNER_TEMP/summary.md"
+            echo
+            if [ "$TEST_OUTCOME" = success ]; then
+              echo "Typecheck and tests pass against this snapshot."
+            else
+              echo "**Tests fail against this snapshot.** A new or renamed tool usually needs an exposure decision in \`src/exposure.ts\`. Last lines:"
+              echo
+              echo '```'
+              tail -n 60 "$RUNNER_TEMP/test.log"
+              echo '```'
+            fi
+            echo
+            echo "Before merging: decide exposure for new tools, run \`npm run test:live\` on a Mac with this driver, and bump the plugin version."
+          } > "$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+          if gh pr view "$branch" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$branch" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$branch" --title "Track Cua Driver $VERSION" --body-file "$RUNNER_TEMP/body.md"
+          fi
