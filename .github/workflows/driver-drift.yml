@@ -92,7 +92,8 @@ jobs:
           tar -xzf "$asset"
           echo "CUA_DRIVER_BIN=$dir/cua-driver" >> "$GITHUB_ENV"
       - name: Read its tools and installer checksums
-        run: npm run sync:tools -- --summary "$RUNNER_TEMP/summary.md"
+        # No CuaDriver.app here, so the driver runs inside the MCP process.
+        run: npm run sync:tools -- --direct --summary "$RUNNER_TEMP/summary.md"
       # PRs opened with this workflow's token do not trigger ci.yml, so test here
       # and put the outcome in the PR. New tools fail the exposure test by design.
       - name: Test against the new snapshot

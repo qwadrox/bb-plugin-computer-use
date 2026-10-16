@@ -13,8 +13,11 @@
  *   npm run sync:tools                         # cua-driver on PATH
  *   CUA_DRIVER_BIN=/path/to/cua-driver npm run sync:tools
  *   npm run sync:tools -- --summary out.md     # also write a Markdown change summary
+ *   npm run sync:tools -- --direct             # macOS without CuaDriver.app (CI)
  *
- * The binary needs no macOS permissions and no running service for this.
+ * Reading tools/list needs no macOS permissions. On macOS, `cua-driver mcp`
+ * proxies to CuaDriver.app and launches it when needed; `--direct` runs the
+ * driver inside the MCP process instead, for a machine without the app.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -32,14 +35,15 @@ const RELEASE_ASSETS = ["install.sh", "_install-rust.sh", "install.ps1"];
 const TAGGED_SOURCES = ["_install-common.sh", "_install-common.psm1"];
 const summaryFlag = process.argv.indexOf("--summary");
 const summaryPath = summaryFlag >= 0 ? process.argv[summaryFlag + 1] : undefined;
+const mcpArgs = process.argv.includes("--direct") ? ["mcp", "--direct"] : ["mcp"];
 const TIMEOUT_MS = 60_000;
 
 function listTools() {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, ["mcp"], { stdio: ["pipe", "pipe", "inherit"] });
+    const child = spawn(binary, mcpArgs, { stdio: ["pipe", "pipe", "inherit"] });
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`${binary} mcp did not answer within ${TIMEOUT_MS / 1000}s`));
+      reject(new Error(`${binary} ${mcpArgs.join(" ")} did not answer within ${TIMEOUT_MS / 1000}s`));
     }, TIMEOUT_MS);
     const pending = new Map();
     let nextId = 1;
