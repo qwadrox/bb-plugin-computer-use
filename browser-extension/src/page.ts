@@ -1,8 +1,30 @@
 /**
  * Functions that run inside a page, in the extension's isolated world. Each is
  * serialized with Function.prototype.toString, so it must not reference
- * anything outside its own body.
+ * anything outside its own body, except `pageRoots` and `findRef`: background.ts
+ * defines both in the page ahead of every call.
  */
+
+/** The document and every open shadow root in it, the document first. */
+export function pageRoots(): Array<Document | ShadowRoot> {
+  const roots: Array<Document | ShadowRoot> = [document];
+  for (const root of roots) {
+    for (const element of Array.from(root.querySelectorAll("*"))) {
+      if (element.shadowRoot !== null) roots.push(element.shadowRoot);
+    }
+  }
+  return roots;
+}
+
+/** The element carrying a snapshot ref, in the document or any open shadow root. */
+export function findRef(ref: string): Element | null {
+  const selector = `[data-agent-ref="${CSS.escape(ref)}"]`;
+  for (const root of pageRoots()) {
+    const found = root.querySelector(selector);
+    if (found !== null) return found;
+  }
+  return null;
+}
 
 export interface SnapshotOptions {
   query: string | null;
@@ -29,7 +51,9 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
   const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "META", "LINK", "SVG", "IFRAME", "CANVAS"]);
   const MAX_LINES = 4000;
 
-  for (const element of Array.from(document.querySelectorAll(`[${ATTRIBUTE}]`))) element.removeAttribute(ATTRIBUTE);
+  for (const root of pageRoots()) {
+    for (const element of Array.from(root.querySelectorAll(`[${ATTRIBUTE}]`))) element.removeAttribute(ATTRIBUTE);
+  }
 
   const lines: string[] = [];
   let refs = 0;
@@ -171,7 +195,7 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
         .filter((cell) => cell !== "");
       if (cells.length > 0) push(cells.join(" | "));
       return;
-    } else if (element.querySelector(SPECIAL) === null) {
+    } else if (element.querySelector(SPECIAL) === null && element.shadowRoot === null) {
       const text = clean((element as HTMLElement).innerText, 500);
       if (text !== "") push(element.tagName === "LI" ? `- ${text}` : text);
       return;
@@ -210,13 +234,12 @@ export interface Located {
   x: number;
   y: number;
   covered: string | null;
-  tag: string;
 }
 
 /** Scrolls the ref into view and returns its center in viewport CSS pixels. */
 export function locateRef(ref: string): Located {
-  const element = document.querySelector(`[data-agent-ref="${CSS.escape(ref)}"]`);
-  if (element === null) return { found: false, x: 0, y: 0, covered: null, tag: "" };
+  const element = findRef(ref);
+  if (element === null) return { found: false, x: 0, y: 0, covered: null };
   element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
@@ -226,12 +249,12 @@ export function locateRef(ref: string): Located {
     hit === null || hit === element || element.contains(hit) || hit.contains(element)
       ? null
       : `${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ""}`;
-  return { found: true, x, y, covered, tag: element.tagName.toLowerCase() };
+  return { found: true, x, y, covered };
 }
 
 /** Clicks through the DOM; the fallback when trusted input is unavailable. */
 export function domClick(ref: string): boolean {
-  const element = document.querySelector(`[data-agent-ref="${CSS.escape(ref)}"]`) as HTMLElement | null;
+  const element = findRef(ref) as HTMLElement | null;
   if (element === null) return false;
   element.focus();
   element.click();
@@ -240,7 +263,7 @@ export function domClick(ref: string): boolean {
 
 /** Focuses an editable ref, selecting its content when `replace` is set. */
 export function focusRef(args: { ref: string; replace: boolean }): { found: boolean; editable: boolean } {
-  const element = document.querySelector(`[data-agent-ref="${CSS.escape(args.ref)}"]`) as HTMLElement | null;
+  const element = findRef(args.ref) as HTMLElement | null;
   if (element === null) return { found: false, editable: false };
   element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   element.focus();
@@ -270,7 +293,7 @@ export function focusRef(args: { ref: string; replace: boolean }): { found: bool
 
 /** The field's current value; passwords are reported only as set or empty. */
 export function readValue(ref: string): { found: boolean; value: string; secret: boolean } {
-  const element = document.querySelector(`[data-agent-ref="${CSS.escape(ref)}"]`) as HTMLElement | null;
+  const element = findRef(ref) as HTMLElement | null;
   if (element === null) return { found: false, value: "", secret: false };
   const field = element as HTMLInputElement;
   const secret = field.type === "password";
@@ -280,7 +303,7 @@ export function readValue(ref: string): { found: boolean; value: string; secret:
 
 /** Sets a field's value the way a framework sees typing; the fallback when Input.insertText is unavailable. */
 export function setValue(args: { ref: string; text: string; replace: boolean }): boolean {
-  const element = document.querySelector(`[data-agent-ref="${CSS.escape(args.ref)}"]`) as HTMLElement | null;
+  const element = findRef(args.ref) as HTMLElement | null;
   if (element === null) return false;
   if (element.tagName === "INPUT" || element.tagName === "TEXTAREA") {
     const field = element as HTMLInputElement;
@@ -301,7 +324,7 @@ export function setValue(args: { ref: string; text: string; replace: boolean }):
 
 /** Chooses an option of a <select> by its value or visible text. */
 export function selectOption(args: { ref: string; option: string }): { found: boolean; chosen: string | null; options: string[] } {
-  const element = document.querySelector(`[data-agent-ref="${CSS.escape(args.ref)}"]`);
+  const element = findRef(args.ref);
   if (element === null || element.tagName !== "SELECT") return { found: element !== null, chosen: null, options: [] };
   const select = element as HTMLSelectElement;
   const options = Array.from(select.options);
@@ -320,15 +343,11 @@ export function selectOption(args: { ref: string; option: string }): { found: bo
 /** Scrolls the page, or the ref into view. */
 export function scrollPage(args: { ref: string | null; deltaY: number }): { found: boolean; scrollY: number } {
   if (args.ref !== null) {
-    const element = document.querySelector(`[data-agent-ref="${CSS.escape(args.ref)}"]`);
+    const element = findRef(args.ref);
     if (element === null) return { found: false, scrollY };
     element.scrollIntoView({ block: "center", behavior: "instant" });
   } else {
     scrollBy({ top: args.deltaY, behavior: "instant" });
   }
   return { found: true, scrollY: Math.round(scrollY) };
-}
-
-export function readyState(): string {
-  return document.readyState;
 }

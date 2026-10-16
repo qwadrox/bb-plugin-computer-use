@@ -5,6 +5,20 @@
 - **New icons:** the plugin icon is a window with a pointer and the letters
   "bb"; the Browser Bridge for bb extension uses the same design on a purple
   tile (store screenshot re-rendered).
+- **The two browser tool sets are told apart.** The **Browser tools** setting
+  is now **Browser window tools (Cua Driver)**: its `cua_browser_*` tools work
+  in a Chrome, Edge, Brave or Electron window without an extension. The
+  extension's switch reads **Offer `browser_*` tools (extension)**, and its
+  card says why the extension is the better choice for web pages: agents use
+  the browser you are signed in to, in any tab, without extra grants or
+  bringing it to the front, and **Pause agents** in the toolbar stops them.
+- **The settings page notices a closed driver connection.** It updates when a
+  machine's driver connection closes on idle timeout, after a grant change or
+  update, or on a disconnect request.
+- **Session labels keep the thread part** when the session prefix is very long.
+- **Browser extension fixes.** It acts on elements inside shadow DOM, recovers
+  after a pause instead of failing with "not attached", and accepts lowercase
+  key names such as `arrowdown`. Its package no longer ships a `.DS_Store`.
 
 ## 0.4.1 - 2026-10-16
 
@@ -94,7 +108,7 @@ Outlook, Teams and a Brave window.
 - `bb cua call --json` replaces image data with its size so large screenshots
   fit bb's CLI output limit.
 
-## 0.2.0
+## 0.2.0 (never tagged)
 
 Validated live against Cua Driver 0.28.2 on macOS.
 
@@ -125,7 +139,7 @@ Validated live against Cua Driver 0.28.2 on macOS.
 - `live.test.ts` (`npm run test:live`) drives Calculator and an attached Chrome
   through the plugin's own server and host code.
 
-## 0.1.0 (unreleased)
+## 0.1.0 - 2026-09-04
 
 - First release: 30 `cua_*` agent tools, `cua-computer-use` skill, per-provider
   routing (`prefer-native`, `cua-everywhere`, `off` plus overrides), driver

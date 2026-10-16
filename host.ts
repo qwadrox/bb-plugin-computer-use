@@ -21,8 +21,9 @@ import {
 import { bridgeLayout, bridgeState, callBrowser, installBridge, uninstallBridge } from "./src/browser-host.js";
 import { INSTALLER_LAYOUT, TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import { McpStdioClient, type McpChild, type McpContentPart } from "./src/mcp-client.js";
+import packageJson from "./package.json";
 
-export const PLUGIN_VERSION = "0.3.0";
+export const PLUGIN_VERSION = packageJson.version;
 const BINARY_CACHE_MS = 60_000;
 const PROBE_TIMEOUT_MS = 8_000;
 const GRANT_TIMEOUT_MS = 120_000;
@@ -32,7 +33,7 @@ const STRUCTURED_TEXT_LIMIT = 200_000;
 const INSTALL_TAIL_LINES = 80;
 
 /** The newest release, through the official one-line installer; pinned installs come from the release itself. */
-export const INSTALL_SCRIPT_URLS = {
+const INSTALL_SCRIPT_URLS = {
   posix: "https://cua.ai/driver/install.sh",
   windows: "https://cua.ai/driver/install.ps1",
 } as const;
@@ -204,7 +205,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
   let binaryCache: { path: string | null; at: number } | null = null;
   let client: McpStdioClient | null = null;
   let connecting: Promise<McpStdioClient> | null = null;
-  let connectedArgs: string | null = null;
+  let connectedGrants: string | null = null;
   let tools: CatalogTool[] = [];
   let serverVersion: string | null = null;
   let lease: ExperimentalHostWorkerLease | null = null;
@@ -239,17 +240,30 @@ export function createCuaHostEntry(deps: HostDependencies) {
     idleTimer = setTimeout(() => disconnect("idle timeout"), idleDisconnectMs);
   }
 
-  function disconnect(reason: string): boolean {
+  /** Forgets the live connection (client, tools, grants, idle timer, worker lease) and returns the client that was live. */
+  function clearConnection(): McpStdioClient | null {
     clearIdleTimer();
     const active = client;
     client = null;
     tools = [];
+    connectedGrants = null;
     const activeLease = lease;
     lease = null;
     void activeLease?.dispose();
+    return active;
+  }
+
+  /**
+   * Ends the live connection, if any, and tells the server once. Teardown
+   * that comes from the worker's own lifecycle passes `notify` as false: the
+   * server is no longer listening then.
+   */
+  function disconnect(reason: string, notify = true): boolean {
+    const active = clearConnection();
     if (active === null) return false;
-    connectedArgs = null;
+    // Cleared first, so the close listener sees a client that is no longer current and stays quiet.
     active.close(reason);
+    if (notify) emitConnection?.(false, reason);
     return true;
   }
 
@@ -287,7 +301,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
   ): Promise<McpStdioClient> {
     const wanted = [...grants].sort().join(",");
     // A newly required grant means restarting the daemon, which drops this connection.
-    if (client !== null && !client.isClosed && connectedArgs !== wanted && grants.length > 0) {
+    if (client !== null && !client.isClosed && connectedGrants !== wanted && grants.length > 0) {
       disconnect("driver grants changed");
     }
     if (client !== null && !client.isClosed) {
@@ -306,15 +320,10 @@ export function createCuaHostEntry(deps: HostDependencies) {
       const child = deps.spawnMcp(binary, ["mcp"]);
       const next = new McpStdioClient(child);
       next.onClose((reason) => {
-        if (client === next) {
-          client = null;
-          tools = [];
-          clearIdleTimer();
-          const activeLease = lease;
-          lease = null;
-          void activeLease?.dispose();
-          emitConnection?.(false, reason);
-        }
+        // A client that is no longer current was ended by disconnect(), which has already reported it.
+        if (client !== next) return;
+        clearConnection();
+        emitConnection?.(false, reason);
       });
       try {
         serverVersion = await next.initialize("bb-plugin-computer-use", PLUGIN_VERSION);
@@ -329,7 +338,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         );
       }
       client = next;
-      connectedArgs = wanted;
+      connectedGrants = wanted;
       lease ??= context.experimental_retainWorker();
       armIdleTimer();
       emitConnection?.(true, "connected");
@@ -345,7 +354,18 @@ export function createCuaHostEntry(deps: HostDependencies) {
   function bindLifecycle(signal: AbortSignal): void {
     if (lifecycleBound) return;
     lifecycleBound = true;
-    signal.addEventListener("abort", () => disconnect("worker disposed"), { once: true });
+    signal.addEventListener("abort", () => disconnect("worker disposed", false), { once: true });
+  }
+
+  /** A probe whose arguments execFile refuses (it throws) reports a failed run instead of rejecting. */
+  function safeExec(binary: string, args: readonly string[]): Promise<ExecResult> {
+    return deps.exec(binary, args, PROBE_TIMEOUT_MS).catch(
+      (error: unknown): ExecResult => ({
+        code: null,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 
   async function probeStatus(probeDaemon: boolean): Promise<DriverStatus> {
@@ -368,33 +388,21 @@ export function createCuaHostEntry(deps: HostDependencies) {
     };
     if (binary === null) return base;
     const errors: string[] = [];
-    const version = await deps.exec(binary, ["--version"], PROBE_TIMEOUT_MS).catch(
-      (error: unknown): ExecResult => ({
-        code: null,
-        stdout: "",
-        stderr: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    const version = await safeExec(binary, ["--version"]);
     if (version.code === 0) {
       base.version = version.stdout.trim().replace(/^cua-driver\s+/i, "") || null;
     } else {
       errors.push(`--version failed: ${version.stderr.trim() || String(version.code)}`);
     }
     if (probeDaemon) {
-      const status = await deps.exec(binary, ["status"], PROBE_TIMEOUT_MS).catch(
-        (): ExecResult => ({ code: null, stdout: "", stderr: "" }),
-      );
+      const status = await safeExec(binary, ["status"]);
       base.daemonRunning = status.code === 0;
       // cua-driver caches this answer on disk for 20 hours, so probing often is cheap.
-      const update = await deps.exec(binary, ["check-update", "--json"], PROBE_TIMEOUT_MS).catch(
-        (): ExecResult => ({ code: null, stdout: "", stderr: "" }),
-      );
+      const update = await safeExec(binary, ["check-update", "--json"]);
       if (update.code === 0) Object.assign(base, parseUpdateCheck(update.stdout));
     }
     if (platform === "darwin") {
-      const permissions = await deps
-        .exec(binary, ["permissions", "status", "--json"], PROBE_TIMEOUT_MS)
-        .catch((): ExecResult => ({ code: null, stdout: "", stderr: "" }));
+      const permissions = await safeExec(binary, ["permissions", "status", "--json"]);
       base.permissions =
         permissions.code === 0
           ? parsePermissions(permissions.stdout)
@@ -643,7 +651,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
       },
     },
     dispose() {
-      disconnect("host entry disposed");
+      disconnect("host entry disposed", false);
     },
   });
 }

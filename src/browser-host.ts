@@ -2,15 +2,10 @@ import { connect } from "node:net";
 import { access, chmod, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BRIDGE_SCRIPT } from "./browser-bridge-script.js";
+import { EXTENSION_IDS, type BrowserBridgeState, type BrowserCallResult } from "./contract.js";
 
 /** Must match NATIVE_HOST in browser-extension/src/shared.ts. */
 export const NATIVE_HOST_NAME = "dev.qwadrox.agent_browser_bridge";
-
-/**
- * Extension ids the bridge accepts: the unpacked build (fixed by the
- * manifest's "key") and the Chrome Web Store item.
- */
-export const EXTENSION_IDS = ["apeidchlabamkkpmahikoiingkhdcagf", "aaidacbpcgjigclcoffjlcpnkmpnpgcc"] as const;
 
 const HELLO_TIMEOUT_MS = 1_500;
 const CALL_TIMEOUT_MS = 90_000;
@@ -78,7 +73,7 @@ export function launcherScript(layout: BridgeLayout, runtime: string): string {
   ].join("\n");
 }
 
-export function nativeManifest(layout: BridgeLayout): string {
+function nativeManifest(layout: BridgeLayout): string {
   return `${JSON.stringify(
     {
       name: NATIVE_HOST_NAME,
@@ -98,19 +93,7 @@ function manifestPath(browser: BrowserTarget): string {
 
 const exists = (path: string) => access(path).then(() => true, () => false);
 
-export interface BrowserConnection {
-  browser: string;
-  version: string;
-  extension: string;
-  pid: number;
-}
-
-export interface BridgeState {
-  supported: boolean;
-  installed: boolean;
-  browsers: Array<{ id: string; name: string; detected: boolean; registered: boolean }>;
-  connections: BrowserConnection[];
-}
+type BrowserConnection = BrowserBridgeState["connections"][number];
 
 /** Writes the bridge script, its launcher, and a manifest for every browser found on this machine. */
 export async function installBridge(layout: BridgeLayout, runtime: string): Promise<void> {
@@ -208,7 +191,7 @@ async function liveSockets(layout: BridgeLayout): Promise<LiveSocket[]> {
   return found.filter((entry): entry is LiveSocket => entry !== null);
 }
 
-export async function bridgeState(layout: BridgeLayout, runtime: string): Promise<BridgeState> {
+export async function bridgeState(layout: BridgeLayout, runtime: string): Promise<BrowserBridgeState> {
   const installed = layout.supported && (await exists(layout.script)) && (await exists(layout.launcher));
   if (installed) await refreshLauncher(layout, runtime);
   const browsers = await Promise.all(
@@ -222,10 +205,6 @@ export async function bridgeState(layout: BridgeLayout, runtime: string): Promis
   const connections = installed ? (await liveSockets(layout)).map((entry) => entry.hello) : [];
   return { supported: layout.supported, installed, browsers, connections };
 }
-
-export type BrowserCallResult =
-  | { ok: true; browser: string; result: unknown }
-  | { ok: false; code: string; message: string };
 
 /** Sends one method to the extension in the chosen (or only) connected browser. */
 export async function callBrowser(
@@ -246,7 +225,8 @@ export async function callBrowser(
       message: "No browser with the Browser Bridge for bb extension is connected. The browser may be closed, or the extension not installed.",
     };
   }
-  const wanted = options.browser?.trim().toLowerCase();
+  // A blank browser name counts as none given.
+  const wanted = options.browser?.trim().toLowerCase() || undefined;
   const matches = wanted ? live.filter((entry) => entry.hello.browser.toLowerCase() === wanted) : live;
   if (matches.length === 0) {
     return {

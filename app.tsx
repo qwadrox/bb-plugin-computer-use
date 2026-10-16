@@ -117,32 +117,51 @@ function SectionState({ error }: { error: string | null }) {
   );
 }
 
+const LINK_CLASS = "rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80";
+
+/** Link to a Cua or store page: opens in a new tab with a visible keyboard focus ring. */
+function TextLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a className={`inline-flex ${LINK_CLASS} focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`} href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
+/** One tooltip provider per settings section, so skipDelayDuration lets a pointer sweeping across the "?" hints open each one without waiting again. */
+function SectionTooltips({ children }: { children: ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={120} skipDelayDuration={300}>
+      {children}
+    </TooltipProvider>
+  );
+}
+
 /**
  * Hover-revealed "?" that keeps a row to one line. The row opts in with
  * `group/row`: hovering it slides the icon in, and hovering or focusing the
  * icon opens the detail in a portaled tooltip, so collapsible panels (which
- * clip overflow while animating) can never cut it off.
+ * clip overflow while animating) can never cut it off. Needs a SectionTooltips
+ * above it.
  */
 function Hint({ label, children }: { label: string; children: string }) {
   return (
-    <TooltipProvider delayDuration={120} skipDelayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label={`About ${label}`}
-            data-row-hint
-            className={`grid size-5 shrink-0 -translate-x-1 place-items-center rounded-full text-muted-foreground opacity-0 transition-[opacity,transform,color] duration-[140ms] motion-reduce:transition-none ${EASE_OUT_CLASS} group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:text-foreground focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[state=delayed-open]:translate-x-0 data-[state=delayed-open]:opacity-100 data-[state=instant-open]:translate-x-0 data-[state=instant-open]:opacity-100`}
-          >
-            <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5">
-              <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.3" />
-              <path d="M6.4 6.4c0-.9.7-1.6 1.6-1.6s1.6.7 1.6 1.6c0 1.1-1.6 1.2-1.6 2.4M8 11.1v.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.3" />
-            </svg>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>{children}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`About ${label}`}
+          data-row-hint
+          className={`grid size-5 shrink-0 -translate-x-1 place-items-center rounded-full text-muted-foreground opacity-0 transition-[opacity,transform,color] duration-[140ms] motion-reduce:transition-none ${EASE_OUT_CLASS} group-hover/row:translate-x-0 group-hover/row:opacity-100 hover:text-foreground focus-visible:translate-x-0 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-[state=delayed-open]:translate-x-0 data-[state=delayed-open]:opacity-100 data-[state=instant-open]:translate-x-0 data-[state=instant-open]:opacity-100`}
+        >
+          <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5">
+            <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M6.4 6.4c0-.9.7-1.6 1.6-1.6s1.6.7 1.6 1.6c0 1.1-1.6 1.2-1.6 2.4M8 11.1v.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.3" />
+          </svg>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{children}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -222,22 +241,24 @@ export function RoutingSettings() {
   if (state === null) return <SectionState error={error} />;
 
   return (
-    <div role="radiogroup" aria-label="Routing mode" className="space-y-1">
-      {MODES.map((mode) => (
-        <label key={mode.value} className="group/row flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 hover:bg-state-hover">
-          <input
-            type="radio"
-            name="cua-mode"
-            value={mode.value}
-            checked={state.mode === mode.value}
-            disabled={busy !== null}
-            onChange={() => void run("mode", () => rpc.call("setMode", { mode: mode.value }))}
-          />
-          <span className="text-sm font-medium">{mode.title}</span>
-          <Hint label={mode.title}>{mode.detail}</Hint>
-        </label>
-      ))}
-    </div>
+    <SectionTooltips>
+      <div role="radiogroup" aria-label="Routing mode" className="space-y-1">
+        {MODES.map((mode) => (
+          <label key={mode.value} className="group/row flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 hover:bg-state-hover">
+            <input
+              type="radio"
+              name="cua-mode"
+              value={mode.value}
+              checked={state.mode === mode.value}
+              disabled={busy !== null}
+              onChange={() => void run("mode", () => rpc.call("setMode", { mode: mode.value }))}
+            />
+            <span className="text-sm font-medium">{mode.title}</span>
+            <Hint label={mode.title}>{mode.detail}</Hint>
+          </label>
+        ))}
+      </div>
+    </SectionTooltips>
   );
 }
 
@@ -246,36 +267,38 @@ export function ProviderOverridesSettings() {
   if (state === null) return <SectionState error={error} />;
 
   return (
-    <Disclosure label="Override routing for individual providers" meta={`${state.providers.length} providers`}>
-      <div data-provider-list className="mt-2 divide-y divide-border/60">
-        {state.providers.map((provider) => (
-          <div key={provider.id} className="flex min-h-12 items-center gap-3 px-3 py-3">
-            <div className="flex min-w-0 flex-1 items-baseline gap-2">
-              <span className="truncate text-sm font-medium">{provider.displayName}</span>
-              <span className={`truncate text-xs ${decisionTone(provider.decision)}`}>{provider.decisionLabel}</span>
+    <SectionTooltips>
+      <Disclosure label="Override routing for individual providers" meta={`${state.providers.length} providers`}>
+        <div data-provider-list className="mt-2 divide-y divide-border/60">
+          {state.providers.map((provider) => (
+            <div key={provider.id} className="flex min-h-12 items-center gap-3 px-3 py-3">
+              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className="truncate text-sm font-medium">{provider.displayName}</span>
+                <span className={`truncate text-xs ${decisionTone(provider.decision)}`}>{provider.decisionLabel}</span>
+              </div>
+              <select
+                aria-label={`${provider.displayName} override`}
+                className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                value={provider.override}
+                disabled={busy !== null}
+                onChange={(event) =>
+                  void run(provider.id, () =>
+                    rpc.call("setOverride", { providerId: provider.id, override: event.target.value as Override }),
+                  )
+                }
+              >
+                {OVERRIDES.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
-            <select
-              aria-label={`${provider.displayName} override`}
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-              value={provider.override}
-              disabled={busy !== null}
-              onChange={(event) =>
-                void run(provider.id, () =>
-                  rpc.call("setOverride", { providerId: provider.id, override: event.target.value as Override }),
-                )
-              }
-            >
-              {OVERRIDES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-        {state.providers.length === 0 ? <p className="px-2 py-4 text-sm text-muted-foreground">No providers available.</p> : null}
-      </div>
-    </Disclosure>
+          ))}
+          {state.providers.length === 0 ? <p className="px-2 py-4 text-sm text-muted-foreground">No providers available.</p> : null}
+        </div>
+      </Disclosure>
+    </SectionTooltips>
   );
 }
 
@@ -288,9 +311,20 @@ function Spinner() {
   );
 }
 
+type InstallPhase = "idle" | "running" | "done" | "failed";
+
+/** The install lifecycle that the progress copy, the dialog and the setup summary all read. */
+function installPhase(install: InstallState): InstallPhase {
+  if (install.running) return "running";
+  if (install.ok === false) return "failed";
+  if (install.ok === true) return "done";
+  return "idle";
+}
+
 function installPresentation(install: InstallState): { label: string; percent: number } {
-  if (install.ok === true || install.step === "done") return { label: "Installation complete", percent: 100 };
-  if (install.ok === false || install.step === "failed") return { label: "Installation failed", percent: 100 };
+  const phase = installPhase(install);
+  if (phase === "done") return { label: "Installation complete", percent: 100 };
+  if (phase === "failed") return { label: "Installation failed", percent: 100 };
   if (install.step === "download") return { label: "Downloading Cua Driver", percent: 20 };
   if (install.step === "install") return { label: "Installing Cua Driver", percent: 60 };
   if (install.step === "autostart" || install.step === "start-service") return { label: "Starting the driver service", percent: 88 };
@@ -364,10 +398,11 @@ function InstallDialog({
   const latest = host.driver?.latestVersion ?? null;
   const retryTarget: InstallTarget = installTarget(host.install, testedVersion);
   const install = host.install;
-  const idle = !install.running && install.ok === null;
-  const failed = install.ok === false;
-  const completed = install.ok === true;
-  const title = install.running
+  const phase = installPhase(install);
+  const idle = phase === "idle";
+  const failed = phase === "failed";
+  const completed = phase === "done";
+  const title = phase === "running"
     ? "Installing Cua Driver"
     : failed
       ? "Cua Driver installation failed"
@@ -385,7 +420,7 @@ function InstallDialog({
           <DialogDescription>
             {idle
               ? `This runs Cua's official ${host.driver?.platform === "win32" ? "install.ps1" : "install.sh"} installer on ${host.name} as your user. The tested release's installer comes from its GitHub release and runs only if every file matches the checksum recorded in this plugin; the newest release uses Cua's unpinned script. It does not request administrator access.`
-              : install.running
+              : phase === "running"
                 ? `The official Cua installer is running on ${host.name}${install.target ? ` (v${install.target})` : " (newest release)"}.`
                 : failed
                   ? "The installer stopped before Desktop & Browser Agent was ready. Review the details below, then retry."
@@ -404,9 +439,7 @@ function InstallDialog({
             ) : (
               <p>On macOS, you will still approve Accessibility and Screen Recording after installation.</p>
             )}
-            <a className="inline-flex rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" href={CUA_INSTALL_URL} target="_blank" rel="noreferrer">
-              Review Cua Driver installation docs
-            </a>
+            <TextLink href={CUA_INSTALL_URL}>Review Cua Driver installation docs</TextLink>
           </div>
         ) : (
           <>
@@ -428,7 +461,7 @@ function InstallDialog({
                 {installing ? "Starting…" : current === testedVersion ? `v${testedVersion} installed` : `Install v${testedVersion}`}
               </Button>
             </>
-          ) : install.running ? (
+          ) : phase === "running" ? (
             <DialogClose asChild>
               <Button variant="outline">Continue in background</Button>
             </DialogClose>
@@ -463,6 +496,18 @@ interface SetupCheck {
   detail?: string;
   meta?: string;
   state: SetupCheckState;
+}
+
+/** Badge copy and text tone per state. A complete check renders as a bare tick, so it has no entry. */
+const SETUP_STATES: Record<Exclude<SetupCheckState, "complete">, { label: string; tone: string }> = {
+  required: { label: "Action required", tone: "text-foreground" },
+  automatic: { label: "Automatic", tone: "text-muted-foreground" },
+  waiting: { label: "Not checked", tone: "text-muted-foreground" },
+};
+
+/** A macOS screen-capture consent that was refused or is blocked, as the driver reports it. */
+function directCaptureDenied(directCapture: string | null | undefined): boolean {
+  return /denied|blocked|missing|error/i.test(directCapture ?? "");
 }
 
 function permissionCheck(label: string, value: boolean | null | undefined): SetupCheck {
@@ -514,30 +559,22 @@ function setupChecks(host: Host, testedVersion: string): SetupCheck[] {
       permissionCheck("Screen Recording", driver.permissions?.screenRecording),
     );
     const directCapture = driver.permissions?.directCapture ?? null;
-    const directCaptureDenied = directCapture !== null && /denied|blocked|missing|error/i.test(directCapture);
+    const denied = directCaptureDenied(directCapture);
     const directCaptureReady = directCapture !== null && /granted|ready|available|authorized|capturable|ok/i.test(directCapture);
     checks.push({
       label: "Direct screen capture",
-      detail: directCaptureDenied
+      detail: denied
         ? "Consent was denied; run the permission guide again"
         : directCaptureReady
           ? undefined
           : "macOS may ask once when the first screenshot is taken",
-      state: directCaptureDenied ? "required" : directCaptureReady ? "complete" : "automatic",
+      state: denied ? "required" : directCaptureReady ? "complete" : "automatic",
     });
   }
   return checks;
 }
 
-function CheckIcon({ state }: { state: SetupCheckState }) {
-  if (state === "complete") {
-    return (
-      <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 size-5 shrink-0 text-success">
-        <circle cx="10" cy="10" r="8" fill="currentColor" opacity="0.12" />
-        <path d="m6.5 10 2.2 2.2 4.8-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
-      </svg>
-    );
-  }
+function CheckIcon({ state }: { state: "required" | "waiting" }) {
   if (state === "required") {
     return (
       <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-0.5 size-5 shrink-0 text-destructive">
@@ -567,10 +604,11 @@ function SetupStateBadge({ state }: { state: SetupCheckState }) {
     );
   }
 
+  const { label, tone } = SETUP_STATES[state];
   return (
     <span
       data-setup-state={state}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-xs font-medium ${state === "automatic" || state === "waiting" ? "text-muted-foreground" : "text-foreground"}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-xs font-medium ${tone}`}
     >
       {state === "required" ? (
         <span className="grid size-4 place-items-center rounded-full border border-border/60 bg-background text-destructive/70">
@@ -583,7 +621,7 @@ function SetupStateBadge({ state }: { state: SetupCheckState }) {
           <span className="size-1 rounded-full bg-muted-foreground" />
         </span>
       )}
-      {checkStateLabel(state)}
+      {label}
     </span>
   );
 }
@@ -605,13 +643,6 @@ function MachineConnectionDot({ online }: { online: boolean }) {
       )}
     </span>
   );
-}
-
-function checkStateLabel(state: SetupCheckState): string {
-  if (state === "complete") return "Ready";
-  if (state === "required") return "Action required";
-  if (state === "automatic") return "Automatic";
-  return "Not checked";
 }
 
 function MachineSetupPanel({
@@ -659,20 +690,21 @@ function MachineSetupPanel({
     driver.installed &&
     (driver.permissions?.accessibility !== true ||
       driver.permissions?.screenRecording !== true ||
-      (driver.permissions?.directCapture !== undefined && /denied|blocked|missing|error/i.test(driver.permissions.directCapture ?? "")));
+      directCaptureDenied(driver.permissions?.directCapture));
   const checks = setupChecks(host, testedVersion);
   const drift = host.drift?.drifted === true ? host.drift : null;
   const requiredChecks = checks.filter((check) => check.state !== "automatic");
   const completeCount = requiredChecks.filter((check) => check.state === "complete").length;
   const needsAction = requiredChecks.some((check) => check.state === "required" || check.state === "waiting");
+  const phase = installPhase(install);
   let summary = needsAction ? "Setup needs attention" : "Ready";
-  if (install.running) {
+  if (phase === "running") {
     summary = installPresentation(install).label;
-  } else if (install.ok === false) {
+  } else if (phase === "failed") {
     summary = "Installation failed";
   }
-  const summaryTone = install.ok === false ? "text-destructive-text" : needsAction || install.running ? "text-warning-text" : "text-success-foreground";
-  const showRefresh = needsAction && !install.running;
+  const summaryTone = phase === "failed" ? "text-destructive-text" : needsAction || phase === "running" ? "text-warning-text" : "text-success-foreground";
+  const showRefresh = needsAction && phase !== "running";
   const showActions = canInstall || canUpdate || canGrant || showRefresh;
 
   return (
@@ -737,9 +769,9 @@ function MachineSetupPanel({
                   disabled={busy !== null && !install.running}
                   onClick={onOpenInstall}
                 >
-                  {install.running
+                  {phase === "running"
                     ? "View progress"
-                    : install.ok === false
+                    : phase === "failed"
                       ? "Retry install…"
                       : offTested
                         ? `Switch to tested v${testedVersion}…`
@@ -777,9 +809,7 @@ function ManualInstallHelp({ testedVersion }: { testedVersion: string }) {
           <p>
             macOS permissions: <code className="text-foreground">cua-driver permissions grant</code>. Approve every prompt for CuaDriver.app, then fully relaunch it if macOS asks.
           </p>
-          <a className="inline-flex rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" href={CUA_INSTALL_URL} target="_blank" rel="noreferrer">
-            Open Cua Driver installation docs
-          </a>
+          <TextLink href={CUA_INSTALL_URL}>Open Cua Driver installation docs</TextLink>
         </div>
       </Disclosure>
     </div>
@@ -795,7 +825,7 @@ export function DriverMachinesSettings() {
   const installHost = state.hosts.find((host) => host.id === installHostId) ?? null;
 
   return (
-    <>
+    <SectionTooltips>
       {state.hosts.length === 0 ? (
         <p className="px-3 py-4 text-sm text-muted-foreground">No machines enrolled.</p>
       ) : (
@@ -840,7 +870,7 @@ export function DriverMachinesSettings() {
           }
         />
       )}
-    </>
+    </SectionTooltips>
   );
 }
 
@@ -891,42 +921,44 @@ export function AgentToolsSettings() {
   ];
 
   return (
-    <div className="space-y-2">
-      <p className="px-3 text-xs leading-relaxed text-muted-foreground">
-        Dedicated tools are offered in every session. Tools reachable through cua_call cost no prompt space until an agent asks for them. Off tools are refused everywhere, cua_call and <code>bb cua call</code> included. This decides what agents are offered; it is not a sandbox for agents that can run a shell.
-      </p>
-      {unreviewed.length > 0 ? (
-        <p className="px-3 text-xs leading-relaxed text-muted-foreground" data-unreviewed-tools>
-          {unreviewed.length} tool{unreviewed.length === 1 ? "" : "s"} from a newer Cua Driver {unreviewed.length === 1 ? "has" : "have"} not been reviewed: read-only ones are reachable through cua_call, the rest stay off.
+    <SectionTooltips>
+      <div className="space-y-2">
+        <p className="px-3 text-xs leading-relaxed text-muted-foreground">
+          Dedicated tools are offered in every session. Tools reachable through cua_call cost no prompt space until an agent asks for them. Off tools are refused everywhere, cua_call and <code>bb cua call</code> included. This decides what agents are offered; it is not a sandbox for agents that can run a shell.
         </p>
-      ) : null}
-      <Disclosure
-        label="Customize individual tools"
-        meta={`${count("tool")} dedicated · ${count("call")} via cua_call · ${count("off")} off`}
-      >
-        <div className="mt-2 space-y-3">
-          {sections.map((section) => {
-            const tools = state.tools.filter((tool) => tool.exposure === section.exposure);
-            if (tools.length === 0) return null;
-            return (
-              <div key={section.exposure} role="group" aria-label={section.title}>
-                <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{section.title}</p>
-                <div className="divide-y divide-border/60">
-                  {tools.map((tool) => (
-                    <ToolRow
-                      key={tool.name}
-                      tool={tool}
-                      busy={busy !== null}
-                      onChange={(exposure) => void run(`tool:${tool.name}`, () => rpc.call("setExposure", { tool: tool.name, exposure }))}
-                    />
-                  ))}
+        {unreviewed.length > 0 ? (
+          <p className="px-3 text-xs leading-relaxed text-muted-foreground" data-unreviewed-tools>
+            {unreviewed.length} tool{unreviewed.length === 1 ? "" : "s"} from a newer Cua Driver {unreviewed.length === 1 ? "has" : "have"} not been reviewed: read-only ones are reachable through cua_call, the rest stay off.
+          </p>
+        ) : null}
+        <Disclosure
+          label="Customize individual tools"
+          meta={`${count("tool")} dedicated · ${count("call")} via cua_call · ${count("off")} off`}
+        >
+          <div className="mt-2 space-y-3">
+            {sections.map((section) => {
+              const tools = state.tools.filter((tool) => tool.exposure === section.exposure);
+              if (tools.length === 0) return null;
+              return (
+                <div key={section.exposure} role="group" aria-label={section.title}>
+                  <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{section.title}</p>
+                  <div className="divide-y divide-border/60">
+                    {tools.map((tool) => (
+                      <ToolRow
+                        key={tool.name}
+                        tool={tool}
+                        busy={busy !== null}
+                        onChange={(exposure) => void run(`tool:${tool.name}`, () => rpc.call("setExposure", { tool: tool.name, exposure }))}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </Disclosure>
-    </div>
+              );
+            })}
+          </div>
+        </Disclosure>
+      </div>
+    </SectionTooltips>
   );
 }
 
@@ -992,97 +1024,98 @@ export function BrowserExtensionSettings() {
   if (view === null) return <SectionState error={error} />;
 
   const connected = view.hosts.flatMap((host) => host.bridge?.connections ?? []);
-  const linkClass = "rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80";
 
   return (
-    <div className="space-y-3">
-      <label className="group/row flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 hover:bg-state-hover">
-        <input
-          type="checkbox"
-          checked={view.enabled}
-          disabled={busy !== null}
-          onChange={(event) => {
-            const enabled = event.target.checked;
-            void run("toggle", () => rpc.call("setBrowserExtension", { enabled }));
-          }}
-        />
-        <span className="text-sm font-medium">Offer browser_* tools (extension)</span>
-        <Hint label="browser tools">
-          Agents work in the tabs of your everyday browser, in the background, while you use other tabs. Tabs they open go into a purple Agent group. The browser shows a debugging bar while an agent is attached. Optional: nothing changes until you turn it on.
-        </Hint>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {connected.length > 0 ? `Connected: ${connected.map((entry) => entry.browser).join(", ")}` : "No browser connected"}
-        </span>
-      </label>
+    <SectionTooltips>
+      <div className="space-y-3">
+        <label className="group/row flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 hover:bg-state-hover">
+          <input
+            type="checkbox"
+            checked={view.enabled}
+            disabled={busy !== null}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              void run("toggle", () => rpc.call("setBrowserExtension", { enabled }));
+            }}
+          />
+          <span className="text-sm font-medium">Offer browser_* tools (extension)</span>
+          <Hint label="browser tools">
+            Agents work in the tabs of your everyday browser, in the background, while you use other tabs. Tabs they open go into a purple Agent group. The browser shows a debugging bar while an agent is attached. Optional: nothing changes until you turn it on.
+          </Hint>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {connected.length > 0 ? `Connected: ${connected.map((entry) => entry.browser).join(", ")}` : "No browser connected"}
+          </span>
+        </label>
 
-      {view.enabled ? (
-        <div className="space-y-3 px-3 text-xs leading-relaxed text-muted-foreground" data-browser-setup>
-          {view.hosts.length === 0 ? <p>No machine is online.</p> : null}
-          {view.hosts.map((host) => {
-            const bridge = host.bridge;
-            const detected = bridge?.browsers.filter((entry) => entry.detected) ?? [];
-            return (
-              <div key={host.id} className="space-y-2 rounded-lg border border-border/70 bg-background p-3" data-browser-host={host.id}>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-foreground">{host.name}</span>
-                  {bridge === null ? null : !bridge.supported ? (
-                    <span>Not supported on this system</span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant={bridge.installed ? "outline" : "default"}
-                      disabled={busy !== null}
-                      onClick={() =>
-                        void run(`bridge:${host.id}`, () =>
-                          rpc.call("browserSetup", { hostId: host.id, action: bridge.installed ? "uninstall" : "install" }),
-                        )
-                      }
-                    >
-                      {busy === `bridge:${host.id}` ? "Working…" : bridge.installed ? "Remove bridge" : "Install bridge"}
-                    </Button>
-                  )}
+        {view.enabled ? (
+          <div className="space-y-3 px-3 text-xs leading-relaxed text-muted-foreground" data-browser-setup>
+            {view.hosts.length === 0 ? <p>No machine is online.</p> : null}
+            {view.hosts.map((host) => {
+              const bridge = host.bridge;
+              const detected = bridge?.browsers.filter((entry) => entry.detected) ?? [];
+              return (
+                <div key={host.id} className="space-y-2 rounded-lg border border-border/70 bg-background p-3" data-browser-host={host.id}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-foreground">{host.name}</span>
+                    {bridge === null ? null : !bridge.supported ? (
+                      <span>Not supported on this system</span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant={bridge.installed ? "outline" : "default"}
+                        disabled={busy !== null}
+                        onClick={() =>
+                          void run(`bridge:${host.id}`, () =>
+                            rpc.call("browserSetup", { hostId: host.id, action: bridge.installed ? "uninstall" : "install" }),
+                          )
+                        }
+                      >
+                        {busy === `bridge:${host.id}` ? "Working…" : bridge.installed ? "Remove bridge" : "Install bridge"}
+                      </Button>
+                    )}
+                  </div>
+                  {host.error !== null ? <p className="text-destructive">{host.error}</p> : null}
+                  {bridge !== null && bridge.supported ? (
+                    <p>
+                      {detected.length === 0
+                        ? "No Chromium browser found (Brave, Chrome, Edge, Chromium)."
+                        : detected.map((entry) => `${entry.name}: ${entry.registered ? "ready" : "not set up"}`).join(" · ")}
+                      {bridge.connections.length > 0
+                        ? ` · connected: ${bridge.connections.map((entry) => `${entry.browser} (extension ${entry.extension})`).join(", ")}`
+                        : ""}
+                    </p>
+                  ) : null}
                 </div>
-                {host.error !== null ? <p className="text-destructive">{host.error}</p> : null}
-                {bridge !== null && bridge.supported ? (
-                  <p>
-                    {detected.length === 0
-                      ? "No Chromium browser found (Brave, Chrome, Edge, Chromium)."
-                      : detected.map((entry) => `${entry.name}: ${entry.registered ? "ready" : "not set up"}`).join(" · ")}
-                    {bridge.connections.length > 0
-                      ? ` · connected: ${bridge.connections.map((entry) => `${entry.browser} (extension ${entry.extension})`).join(", ")}`
-                      : ""}
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
-          <ol className="list-decimal space-y-1.5 pl-5">
-            <li>Install the bridge above. It lets the extension talk to bb on this machine; Remove bridge undoes it.</li>
-            <li>
-              Add{" "}
-              <a className={linkClass} href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer">
-                Browser Bridge for bb from the Chrome Web Store
-              </a>
-              . To run a local build instead, open <code className="text-foreground">brave://extensions</code> or <code className="text-foreground">chrome://extensions</code>, turn on Developer mode, choose Load unpacked, and pick
-              {view.extensionDir === null ? (
-                <> the <code className="text-foreground">browser-extension/dist</code> folder of this plugin (build it with <code className="text-foreground">npm run build:extension</code>).</>
-              ) : (
-                <> this folder (build it first with <code className="text-foreground">npm run build:extension</code>):<CopyPath value={view.extensionDir} /></>
-              )}
-            </li>
-            <li>
-              Agents can use any tab. Tabs they open go into a purple <strong className="font-medium text-foreground">Agent</strong> group. Pause them from the extension's toolbar button, or by closing the debugging bar.
-            </li>
-          </ol>
-          <p>
-            Extension id <code className="text-foreground">{view.extensionId}</code>. Browser Bridge for bb ships with this plugin; it is not an official bb or Cua AI product.{" "}
-            <button type="button" className={linkClass} onClick={() => void load()}>
-              Check again
-            </button>
-          </p>
-        </div>
-      ) : null}
-    </div>
+              );
+            })}
+            <ol className="list-decimal space-y-1.5 pl-5">
+              <li>Install the bridge above. It lets the extension talk to bb on this machine; Remove bridge undoes it.</li>
+              <li>
+                Add{" "}
+                <a className={LINK_CLASS} href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer">
+                  Browser Bridge for bb from the Chrome Web Store
+                </a>
+                . To run a local build instead, open <code className="text-foreground">brave://extensions</code> or <code className="text-foreground">chrome://extensions</code>, turn on Developer mode, choose Load unpacked, and pick
+                {view.extensionDir === null ? (
+                  <> the <code className="text-foreground">browser-extension/dist</code> folder of this plugin (build it with <code className="text-foreground">npm run build:extension</code>).</>
+                ) : (
+                  <> this folder (build it first with <code className="text-foreground">npm run build:extension</code>):<CopyPath value={view.extensionDir} /></>
+                )}
+              </li>
+              <li>
+                Agents can use any tab. Tabs they open go into a purple <strong className="font-medium text-foreground">Agent</strong> group. Pause them from the extension's toolbar button, or by closing the debugging bar.
+              </li>
+            </ol>
+            <p>
+              Extension id <code className="text-foreground">{view.extensionId}</code>. Browser Bridge for bb ships with this plugin; it is not an official bb or Cua AI product.{" "}
+              <button type="button" className={LINK_CLASS} onClick={() => void load()}>
+                Check again
+              </button>
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </SectionTooltips>
   );
 }
 
@@ -1154,12 +1187,8 @@ export function AboutComputerUse() {
         Desktop & Browser Agent is an independent bb integration powered by <strong className="font-medium text-foreground">Cua Driver</strong>, the open-source desktop and browser automation runtime from Cua AI, Inc.
       </p>
       <div className="flex flex-wrap gap-x-4 gap-y-2">
-        <a className="rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" href={CUA_DOCS_URL} target="_blank" rel="noreferrer">
-          Learn about Cua Driver
-        </a>
-        <a className="rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" href={CUA_SOURCE_URL} target="_blank" rel="noreferrer">
-          View Cua on GitHub
-        </a>
+        <TextLink href={CUA_DOCS_URL}>Learn about Cua Driver</TextLink>
+        <TextLink href={CUA_SOURCE_URL}>View Cua on GitHub</TextLink>
       </div>
       <p className="text-xs">This community plugin is not affiliated with or endorsed by Cua AI, Inc.</p>
     </div>

@@ -26,9 +26,11 @@ export interface DriverCatalog {
 
 const PROPERTY_DESCRIPTION_LIMIT = 200;
 const TOOL_DESCRIPTION_LIMIT = 1_500;
+const SUMMARY_LIMIT = 160;
 const ANNOTATION_KEYS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const;
 
-function firstSentence(text: string, limit: number): string {
+/** The text up to its first sentence end, bounded; the whole text when it has none. */
+export function firstSentence(text: string, limit = SUMMARY_LIMIT): string {
   const flat = text.replace(/\s+/g, " ").trim();
   const sentence = /^(.+?[.!?])(\s|$)/.exec(flat)?.[1] ?? flat;
   return sentence.length > limit ? `${sentence.slice(0, limit - 1)}…` : sentence;
@@ -80,7 +82,7 @@ export function normalizeDriverTool(raw: unknown): DriverTool | null {
   if (typeof raw !== "object" || raw === null) return null;
   const entry = raw as Record<string, unknown>;
   if (typeof entry.name !== "string" || entry.name.length === 0) return null;
-  const schema = entry.inputSchema ?? entry.input_schema;
+  const schema = entry.inputSchema;
   const inputSchema =
     typeof schema === "object" && schema !== null && !Array.isArray(schema)
       ? (compactSchema(schema) as Record<string, unknown>)

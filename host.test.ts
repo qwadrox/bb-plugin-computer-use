@@ -174,6 +174,15 @@ async function flush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 5));
 }
 
+function connectionChanges(harness: {
+  experimental_getSignals(): ReadonlyArray<{ readonly signal: string; readonly payload: unknown }>;
+}): unknown[] {
+  return harness
+    .experimental_getSignals()
+    .filter((signal) => signal.signal === "connectionChanged")
+    .map((signal) => signal.payload);
+}
+
 describe("candidateBinaryPaths", () => {
   it("prefers CUA_DRIVER_PATH, then PATH, then the installer location per platform", () => {
     expect(
@@ -459,6 +468,50 @@ describe("cua host entry", () => {
     expect(result.ok).toBe(true);
     expect(result.output).toMatch(/Approve the macOS prompts/);
     expect(exec).toHaveBeenCalledWith("/Users/test/.local/bin/cua-driver", ["permissions", "grant"], expect.any(Number));
+    await harness.experimental_dispose();
+  });
+
+  it("tells the server the connection ended when it is disconnected on request", async () => {
+    const { entry } = deps({ server: fakeMcpServer([{ name: "list_apps", inputSchema: { type: "object", properties: {} } }]) });
+    const harness = experimental_createHostEntryHarness(entry);
+    await harness.experimental_call("callTool", { name: "list_apps", arguments: {}, grants: [] });
+    expect(await harness.experimental_call("disconnect", null)).toEqual({ disconnected: true });
+    expect(connectionChanges(harness)).toEqual([
+      { connected: true, reason: "connected" },
+      { connected: false, reason: "disconnect requested" },
+    ]);
+    await harness.experimental_dispose();
+  });
+
+  it("tells the server the connection ended once when it goes idle", async () => {
+    const { entry } = deps({
+      server: fakeMcpServer([{ name: "list_apps", inputSchema: { type: "object", properties: {} } }]),
+      idleDisconnectMs: 5,
+    });
+    const harness = experimental_createHostEntryHarness(entry);
+    await harness.experimental_call("callTool", { name: "list_apps", arguments: {}, grants: [] });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(connectionChanges(harness)).toEqual([
+      { connected: true, reason: "connected" },
+      { connected: false, reason: "idle timeout" },
+    ]);
+    expect(await harness.experimental_call("disconnect", null)).toEqual({ disconnected: false });
+    expect(connectionChanges(harness)).toHaveLength(2);
+    await harness.experimental_dispose();
+  });
+
+  it("reports a driver that exits on its own once, and not again when disconnected", async () => {
+    const server = fakeMcpServer([{ name: "list_apps", inputSchema: { type: "object", properties: {} } }]);
+    const { entry } = deps({ server });
+    const harness = experimental_createHostEntryHarness(entry);
+    await harness.experimental_call("callTool", { name: "list_apps", arguments: {}, grants: [] });
+    server.child.kill();
+    await flush();
+    expect(await harness.experimental_call("disconnect", null)).toEqual({ disconnected: false });
+    expect(connectionChanges(harness)).toEqual([
+      { connected: true, reason: "connected" },
+      { connected: false, reason: "process exited (0)" },
+    ]);
     await harness.experimental_dispose();
   });
 });

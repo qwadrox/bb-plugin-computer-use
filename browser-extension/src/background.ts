@@ -1,9 +1,10 @@
 import {
   domClick,
+  findRef,
   focusRef,
   locateRef,
+  pageRoots,
   readValue,
-  readyState,
   scrollPage,
   selectOption,
   setValue,
@@ -26,6 +27,7 @@ const SCREENSHOT_TIMEOUT_MS = 6_000;
 const LOAD_TIMEOUT_MS = 20_000;
 const IDLE_DETACH_MS = 60_000;
 const RECONNECT_ALARM = "reconnect";
+const PAUSED_KEY = "paused";
 
 class BridgeError extends Error {
   constructor(
@@ -39,8 +41,8 @@ class BridgeError extends Error {
 // ---------------------------------------------------------------- settings
 
 async function readSettings(): Promise<StoredSettings> {
-  const stored = await chrome.storage.local.get("paused");
-  return { paused: stored.paused === true };
+  const stored = await chrome.storage.local.get(PAUSED_KEY);
+  return { paused: stored[PAUSED_KEY] === true };
 }
 
 function browserName(): string {
@@ -133,14 +135,17 @@ async function groupAgentTab(tabId: number): Promise<void> {
   await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "purple" });
 }
 
-async function allowedTab(tabId: unknown): Promise<chrome.tabs.Tab> {
-  const settings = await readSettings();
-  if (settings.paused) {
+async function assertNotPaused(): Promise<void> {
+  if ((await readSettings()).paused) {
     throw new BridgeError(
       "paused",
       "The user paused agents in the browser extension. Do not work around it; ask the user to resume from the extension's toolbar button if the task needs the browser.",
     );
   }
+}
+
+async function allowedTab(tabId: unknown): Promise<chrome.tabs.Tab> {
+  await assertNotPaused();
   if (typeof tabId !== "number") throw new BridgeError("invalid_arguments", "tab_id must be a number from browser_tabs or browser_open.");
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (tab === null) throw new BridgeError("tab_closed", `Tab ${tabId} is closed. browser_tabs lists the open tabs.`);
@@ -155,13 +160,21 @@ function tabSummary(tab: chrome.tabs.Tab) {
 
 const attached = new Map<number, number>();
 
+/** Detaches the debugger from every tab agents are using. */
+async function detachAll(): Promise<void> {
+  for (const tabId of [...attached.keys()]) {
+    attached.delete(tabId);
+    await chrome.debugger.detach({ tabId }).catch(() => undefined);
+  }
+}
+
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return;
   attached.delete(source.tabId);
   if (reason === "canceled_by_user") {
     // The user dismissed the "started debugging this browser" bar: stop all agent work.
-    void chrome.storage.local.set({ paused: true });
-    for (const tabId of attached.keys()) void chrome.debugger.detach({ tabId }).catch(() => undefined);
+    void chrome.storage.local.set({ [PAUSED_KEY]: true });
+    void detachAll();
   }
 });
 
@@ -221,7 +234,8 @@ function cdp<T = Record<string, unknown>>(
   params: Record<string, unknown> = {},
   timeoutMs = CDP_TIMEOUT_MS,
 ): Promise<T> {
-  attached.set(tabId, Date.now());
+  // Only refresh a tab that is still attached: a call that outlives a detach must not re-add it.
+  if (attached.has(tabId)) attached.set(tabId, Date.now());
   return withTimeout(
     chrome.debugger.sendCommand({ tabId }, method, params) as Promise<T>,
     timeoutMs,
@@ -237,7 +251,12 @@ async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg
     frameId: tree.frameTree.frame.id,
     worldName: "agent-browser-bridge",
   });
-  const expression = `(${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)})`;
+  // The page helpers are defined ahead of fn, which may call them (see page.ts).
+  const expression = `(() => {
+    const pageRoots = ${pageRoots.toString()};
+    const findRef = ${findRef.toString()};
+    return (${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)});
+  })()`;
   const response = await cdp<{
     result: { value?: unknown };
     exceptionDetails?: { text: string; exception?: { description?: string } };
@@ -293,6 +312,8 @@ const KEYS: Record<string, { code: string; keyCode: number; text?: string; key?:
   PageDown: { code: "PageDown", keyCode: 34 },
   Space: { code: "Space", keyCode: 32, text: " ", key: " " },
 };
+/** The named keys by lower-case name, so "arrowdown" and "ArrowDown" both work. */
+const NAMED_KEYS = new Map(Object.entries(KEYS).map(([name, spec]) => [name.toLowerCase(), spec] as const));
 const MODIFIERS: Record<string, number> = { alt: 1, ctrl: 2, control: 2, meta: 4, cmd: 4, command: 4, shift: 8 };
 
 async function pressKey(tabId: number, combo: string): Promise<void> {
@@ -305,10 +326,10 @@ async function pressKey(tabId: number, combo: string): Promise<void> {
     if (bit === undefined) throw new BridgeError("invalid_arguments", `Unknown modifier ${part}. Use ctrl, alt, shift or meta.`);
     modifiers |= bit;
   }
-  const named = KEYS[keyName] ?? KEYS[keyName[0]?.toUpperCase() + keyName.slice(1)];
+  const named = NAMED_KEYS.get(keyName.toLowerCase());
   let event: { key: string; code: string; windowsVirtualKeyCode: number; text?: string };
   if (named !== undefined) {
-    event = { key: named.key ?? keyName, code: named.code, windowsVirtualKeyCode: named.keyCode, ...(named.text ? { text: named.text } : {}) };
+    event = { key: named.key ?? named.code, code: named.code, windowsVirtualKeyCode: named.keyCode, ...(named.text ? { text: named.text } : {}) };
   } else if ([...keyName].length === 1) {
     const upper = keyName.toUpperCase();
     const isLetter = /[A-Z]/.test(upper);
@@ -359,8 +380,7 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       return { paused: settings.paused, tabs: tabs.map(tabSummary) };
     }
     case "open": {
-      const settings = await readSettings();
-      if (settings.paused) await allowedTab(-1);
+      await assertNotPaused();
       const url = webUrl(typeof params.url === "string" && params.url !== "" ? params.url : "about:blank");
       const window = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
       const tab = await chrome.tabs.create({ url, active: false, ...(window?.id !== undefined ? { windowId: window.id } : {}) });
@@ -500,10 +520,6 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       await chrome.tabs.remove(tab.id!);
       return { closed: tab.id };
     }
-    case "ready": {
-      const tab = await allowedTab(params.tab_id);
-      return evaluate<string>(tab.id!, readyState);
-    }
     default:
       throw new BridgeError("unknown_method", `Unknown method ${method}.`);
   }
@@ -515,14 +531,11 @@ chrome.runtime.onMessage.addListener((message: PopupRequest, _sender, reply) => 
   void (async () => {
     switch (message.type) {
       case "pause":
-        await chrome.storage.local.set({ paused: true });
-        for (const tabId of [...attached.keys()]) {
-          attached.delete(tabId);
-          await chrome.debugger.detach({ tabId }).catch(() => undefined);
-        }
+        await chrome.storage.local.set({ [PAUSED_KEY]: true });
+        await detachAll();
         break;
       case "resume":
-        await chrome.storage.local.set({ paused: false });
+        await chrome.storage.local.set({ [PAUSED_KEY]: false });
         break;
       case "reconnect":
         retryMs = 2_000;

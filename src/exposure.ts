@@ -1,3 +1,4 @@
+import type { ToolLabels } from "./catalog.js";
 import { isReadOnly, type DriverTool } from "./driver-tools.js";
 
 export const TOOL_GROUPS = ["desktop", "browser", "clipboard"] as const;
@@ -20,7 +21,7 @@ interface Reviewed {
   exposure: Exposure | "managed";
   /** Short description for the dedicated tool; the driver's lead paragraph otherwise. */
   summary?: string;
-  labels?: { pending: string; completed: string };
+  labels?: ToolLabels;
 }
 
 const tool = (summary: string, pending: string, completed: string, group: ToolGroup = "desktop"): Reviewed => ({
@@ -207,7 +208,7 @@ export function mayAskFirst(name: string): boolean {
 
 export function presentationFor(name: string, driverTool: DriverTool | undefined): {
   description: string;
-  labels: { pending: string; completed: string };
+  labels: ToolLabels;
 } {
   const reviewed = REVIEWED_TOOLS[name];
   const words = name.replace(/_/g, " ");

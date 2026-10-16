@@ -86,10 +86,12 @@ Three tiers, decided by the plugin, not by `risk.class`:
 
 ### 5. Skill
 
-- Track the upstream skill pack (`cua-driver-rs-vX.Y.Z-skills.tar.gz` release
-  asset) in the same CI PR, and keep `skills/cua-computer-use/SKILL.md` as a
-  short bb-specific layer on top: tool prefix, `run_steps` first, the
-  exposure policy, and stop-and-ask rules for sending or deleting.
+- Keep `skills/cua-computer-use/SKILL.md` as a short bb-specific layer on top
+  of the upstream Cua Driver skill pack: tool prefix, `run_steps` first, the
+  exposure policy, and stop-and-ask rules for sending or deleting. The pack is
+  read by hand when the skill is refreshed (0.3.0 was rewritten from the 0.36
+  pack). The drift PR does not track it: `driver-drift.yml` changes only
+  `src/driver-snapshot.json` and `src/driver-installer.json`.
 
 ## Phases
 

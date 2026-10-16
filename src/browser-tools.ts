@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ToolLabels } from "./catalog.js";
 import type { BrowserCallResult, ToolCallResult } from "./contract.js";
 
 /**
@@ -10,7 +11,7 @@ export interface BrowserTool {
   method: string;
   description: string;
   parameters: z.ZodObject<z.ZodRawShape>;
-  labels: { pending: string; completed: string };
+  labels: ToolLabels;
 }
 
 const browser = z

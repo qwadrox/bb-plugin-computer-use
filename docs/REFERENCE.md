@@ -11,7 +11,7 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 | Drift report | The plugin compares each machine's driver with the one it was tested with and names new, removed and changed tools in `bb cua status`, `bb cua drift`, the settings page, and one line in agent instructions. |
 | Pinned installs | Install and update target the tested driver by default. The plugin downloads that release's installer files from GitHub and runs them only if each matches a checksum recorded in this repo. The newest release is a separate, explicitly untested choice. |
 | Agent skill | `cua-computer-use`: the upstream Cua Driver 0.36 loop (narrow reads, `run_steps` with `observe`, verify at checkpoints) plus bb rules: what to do when a tool is off, and when to stop and ask before sending or deleting. |
-| Settings UI | Routing mode, per-provider overrides, an **Agent tools** card with per-tool exposure, and a setup checklist per machine with install, permission and drift state. |
+| Settings UI | Routing mode, per-provider overrides, an **Agent tools** card with per-tool exposure, a setup checklist per machine with install, permission and drift state, and a **Browser extension** card (the `browser_*` switch and each machine's bridge). A sensitive call that needs your answer shows the approval card in its thread (see [Permissions and safety](#permissions-and-safety)). |
 | Browser extension (optional) | **Browser Bridge for bb**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs of your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
 | CLI | `bb cua status`, `drift`, `tools`, `expose`, `call`, `policy`, `mode`, `install`, `update`, `grant`, `browser`. |
 | Multi-machine | Tool calls run on the host that owns the thread's environment through bb's host RPC, so remote enrolled machines work the same as the local one. |
@@ -140,7 +140,8 @@ Brave included, the way browser agents usually do: the extension uses the
 browser's debugger API on its tabs, so agents click and type in
 background tabs while you use other tabs. The browser shows its "started
 debugging this browser" bar while an agent is attached; closing that bar
-pauses agents until you resume them from the extension.
+pauses agents until you resume them from the extension. The bridge runs on
+macOS and Linux only.
 
 Nothing changes until you turn it on:
 
@@ -262,8 +263,8 @@ thread turn ──▶ bb server (plugin server.ts)
   plugin's key-value store; before a machine has been read, agents get the
   tested snapshot. Arguments are forwarded untouched; the plugin adds the
   thread's session label.
-- When a thread goes idle, fails, or is archived, the plugin ends that thread's
-  Cua session.
+- When a thread goes idle, fails, is archived, or is deleted, the plugin ends
+  that thread's Cua session.
 
 ## Permissions and safety
 
@@ -280,8 +281,10 @@ thread turn ──▶ bb server (plugin server.ts)
 - With **Ask before sensitive actions** on, these calls wait for your answer
   in the thread: reading clipboard text, writing the clipboard, capturing the
   whole screen, uploading or downloading files, attaching to a signed-in
-  browser, and the code, kill, recording, extension and configuration tools
-  once you expose them. **Allow once**, **Allow for this thread** (until the
+  browser, and the `run_script`, `kill_app`, `install_extension`, `set_config`,
+  `start_recording` and `replay_trajectory` tools once you expose them.
+  `install_ffmpeg`, `stop_recording` and `page` are off by default and do not
+  ask when exposed. **Allow once**, **Allow for this thread** (until the
   thread is archived or the plugin reloads), or **Don't allow**; an
   unanswered request is refused after ten minutes. `bb cua call` asks in the
   thread it runs from; from a terminal outside any thread it runs, since that

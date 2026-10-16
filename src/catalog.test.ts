@@ -76,7 +76,7 @@ describe("driver tools", () => {
     const normalized = normalizeDriverTool({
       name: "zoom",
       description: "Zoom in.\n\nLong detail.",
-      input_schema: { type: "object" },
+      inputSchema: { type: "object" },
       annotations: { readOnlyHint: true, title: "ignored" },
     });
     expect(normalized).toEqual({ name: "zoom", description: "Zoom in.", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } });

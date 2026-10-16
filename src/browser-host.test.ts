@@ -2,8 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { EXTENSION_IDS } from "./contract.js";
 import {
-  EXTENSION_IDS,
   NATIVE_HOST_NAME,
   bridgeLayout,
   bridgeState,
@@ -159,6 +159,16 @@ describe("browser bridge calls", () => {
     chrome.child.stdin.end();
     await new Promise((resolve) => chrome.child.once("exit", resolve));
     expect(await callBrowser(layout, "tabs", {})).toMatchObject({ ok: true, browser: "Brave", result: "brave" });
+  });
+
+  it("treats a blank browser name like none given", async () => {
+    const { layout } = tempLayout();
+    await installBridge(layout, process.execPath);
+    const brave = fakeBrowser(layout, "Brave", () => "brave");
+    const chrome = fakeBrowser(layout, "Chrome", () => "chrome");
+    await Promise.all([brave.started, chrome.started]);
+
+    expect(await callBrowser(layout, "tabs", {}, { browser: " " })).toMatchObject({ ok: false, code: "several_browsers" });
   });
 
   it("says when no browser is connected", async () => {

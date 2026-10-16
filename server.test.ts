@@ -411,6 +411,22 @@ describe("driver calls", () => {
     expect(sessions[1]).not.toBe(sessions[0]);
   });
 
+  it("keeps each session label unique under a long prefix, cutting the prefix rather than the suffix", async () => {
+    const ended: ToolCallResult = {
+      content: [{ type: "text", text: "session 'bb-thr' has ended; tool call 'click' was rejected." }],
+      isError: true,
+    };
+    const { harness, toolCalls } = await load({ settings: { sessionPrefix: "p".repeat(200) }, toolResults: [ended] });
+    await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" });
+    const sessions = toolCalls().map((call) => call.session ?? "");
+    expect(sessions).toHaveLength(2);
+    for (const session of sessions) {
+      expect(session.length).toBeLessThanOrEqual(125);
+      expect(session).toMatch(/^p+-.+-[0-9a-z]+$/);
+    }
+    expect(sessions[1]).not.toBe(sessions[0]);
+  });
+
   it("forgets a machine's sessions when its Cua connection drops", async () => {
     const { harness, toolCalls } = await load();
     await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" });

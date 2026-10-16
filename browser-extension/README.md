@@ -73,7 +73,7 @@ npm run package --workspace browser-extension   # browser-bridge-for-bb-<version
 ```
 
 The store item is [`aaidacbpcgjigclcoffjlcpnkmpnpgcc`](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc);
-`EXTENSION_IDS` in `src/browser-host.ts` lists it next to the unpacked id, so
+`EXTENSION_IDS` in `src/contract.ts` lists it next to the unpacked id, so
 the bridge's native messaging manifests allow both. Bump
 `version` in `static/manifest.json` and `package.json` together.
 

@@ -1,9 +1,10 @@
 # Specification: Desktop & Browser Agent for bb
 
-Status: the v0.1 specification. Tool
-selection, exposure, drift and installs changed in 0.3.0: see
-[PLAN.md](PLAN.md) and the README. Sections marked *later* are planned, not
-shipped.
+Status: the original design, written as the v0.1 specification. It is not kept
+up to date. Tool selection, exposure, drift and installs changed in 0.3.0, and
+the browser extension came in 0.4.0. [REFERENCE.md](REFERENCE.md) describes
+what ships and is authoritative; [PLAN.md](PLAN.md) gives the reasons for the
+0.3.0 design. Sections marked *later* are planned, not shipped.
 
 ## 1. Goal
 
@@ -24,7 +25,8 @@ Cua Driver is used.
 - Cloud sandboxes (Cua Cloud Fleet, Lume VMs). A remote bb machine with Cua
   Driver installed already works through host RPC; provisioning is out of
   scope.
-- Reproducing all 56 upstream tools as typed bb tools. A curated set is typed;
+- Reproducing all 60 upstream tools of the 0.36.0 snapshot
+  (`src/driver-snapshot.json`) as typed bb tools. A curated set is typed;
   the rest is reachable through `cua_call`.
 
 ## 3. Functional requirements
@@ -43,10 +45,10 @@ Cua Driver is used.
 | FR-10 | Inject the `cua-computer-use` skill and a readiness line into instructions when Cua tools are active. | done |
 | FR-11 | `bb cua` CLI for status, policy, mode, tool catalog, raw calls. | done |
 | FR-12 | Settings UI: mode radio, provider table with override selects, machine readiness with "Check", install/permission help. | done |
-| FR-13 | Live schema refresh: narrow advertised parameter schemas from the machine's `tools/list`. | later |
+| FR-13 | Live schema refresh: narrow advertised parameter schemas from the machine's `tools/list`. | done |
 | FR-14 | Optional trajectory recording toggle per thread with a panel to review the MP4. | later |
 | FR-15 | Detect native computer use from a bb provider capability flag instead of a hardcoded table. | later (needs bb change) |
-| FR-16 | Opt-in installer: after a two-step confirm, download Cua's official install script into the worker temp dir, run it as the user, stream output lines to the UI via host signals, re-probe readiness. CLI `bb cua install --yes`. | done |
+| FR-16 | Opt-in installer: after a two-step confirm, download the tested release's installer files from its GitHub release into the worker temp dir, refuse any file whose sha256 differs from `src/driver-installer.json`, run them as the user, stream output lines to the UI via host signals, re-probe readiness. The newest release instead runs Cua's one-line script from cua.ai. CLI `bb cua install --yes`. | done |
 | FR-17 | macOS "Grant permissions" action running `cua-driver permissions grant`; CLI `bb cua grant`. | done |
 | FR-18 | Expandable setup checklist per machine, including install, service, Accessibility, Screen Recording, and direct-capture guidance. | done |
 | FR-19 | Preflight tool calls against recent readiness and convert permission failures into an actionable plugin-settings link. | done |
@@ -124,8 +126,10 @@ settings page.
    `~/.local/bin/cua-driver` (macOS/Linux) or
    `%LOCALAPPDATA%\Programs\Cua\cua-driver\bin\cua-driver.exe`. Cached 60 s.
 2. `status`: `cua-driver --version`, optional `cua-driver status` (exit 0 =
-   service running), and on macOS `cua-driver permissions status --json`
-   parsed leniently for `accessibility` and `screen_recording` grants.
+   service running), and, when the service is probed, `cua-driver check-update
+   --json` for the newest release. On macOS, `cua-driver permissions status
+   --json` is parsed leniently for `accessibility` and `screen_recording`
+   grants.
 3. `callTool` / `listTools`: spawn `cua-driver mcp`, MCP `initialize` +
    `tools/list`, then `tools/call`. Retain the worker while connected; idle
    timer 10 min; lifecycle abort and `dispose` kill the child.
@@ -149,19 +153,24 @@ the bb daemon must run in the interactive desktop session.
 ## 9. Security and privacy
 
 - Full-trust plugin like every bb plugin; runs only what the user installed.
-- No grants, manifests, or permission-mode changes are passed to the driver.
+- The plugin passes `--grant existing-profile` to the driver only while
+  **Signed-in browser profiles** is on. It never sends permission-mode or
+  manifest changes, and never removes a grant itself.
 - Only `hostId`, tool name, and arguments cross the server/host boundary;
   screenshots travel back to the server as tool results, the same path any
   provider tool result takes.
-- Cua telemetry is the machine's setting; documented in the README.
+- Cua Driver sends content-free telemetry by default; `cua-driver telemetry
+  disable` turns it off. The plugin sends nothing itself. See
+  [REFERENCE.md](REFERENCE.md#permissions-and-safety).
 
 ## 10. Compatibility
 
 - bb `>=0.39`, plugin SDK `>=0.4.16` (uses `bb.hosts.experimental_client`,
   `bb.agents.configure`, `presentation.label` on tools).
-- Cua Driver `>=0.17` for snapshot-bound element tokens; tested against docs
-  for 0.23.x. No live driver was available in the authoring environment; the
-  MCP wire format follows the MCP 2025-06-18 specification.
+- Tested against Cua Driver 0.36.0 on macOS, with live reads (`npm run
+  test:live`); its tools are in `src/driver-snapshot.json`. Other driver
+  releases are read when a machine connects, and any difference is reported
+  as drift. The MCP wire format follows the MCP 2025-06-18 specification.
 - Providers verified to accept plugin tools in bb source: Claude Code, Codex,
   Pi. ACP providers did not show dynamic-tool plumbing in the bb checkout
   used; treat ACP as untested.

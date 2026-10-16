@@ -41,16 +41,20 @@ plugin storage instead; the card and `bb cua mode` both write it.
 machine row. It has four states:
 
 - **Confirmation:** explains the official script and target machine, links to
-  Cua's installation docs, and requires an explicit **Run installer** action.
+  Cua's installation docs, and offers two buttons: the tested release, labelled
+  **Install v** and its version (shown as installed and disabled when that
+  version is already there), and the newest release, labelled **Newest v…
+  (untested)** or **Newest release** when it is the tested one. Nothing runs
+  until one is clicked.
 - **Running:** shows a spinner, phase label, and progress bar estimated from the
   installer phase. Raw output is available under **Installation details**.
 - **Failed:** marks the progress as failed, opens the output details, and offers
   **Retry installation**.
 - **Complete:** confirms readiness and keeps the output available for review.
 
-The dialog can be closed while installation continues. The machine panel changes
-to **View progress**, which reopens the same live state without restarting the
-installer.
+While it runs, **Continue in background** closes the dialog and the installation
+continues. The machine panel changes to **View progress**, which reopens the
+same live state without restarting the installer.
 
 ## Checklist per machine
 
@@ -79,13 +83,15 @@ Cards and machine panels stack without a horizontal table. Controls keep a
 minimum 40 px target, and the installer dialog stays within the viewport with
 its content scrolling internally when needed.
 
-## Thread-level surfaces (not in v0.1)
+## Thread-level surfaces (not built)
+
+Ideas only; nothing here ships.
 
 - A thread header chip showing "Cua: connected on <machine>" with a stop button
-  that ends the thread's session. Candidate for v0.2 using
+  that ends the thread's session. Possible later, using
   `experimental_threadHeaderAction`.
 - A recording panel (`threadPanelAction`) to start/stop trajectory recording
-  and open the rendered MP4.
+  and open the rendered MP4. Not built; recording tools stay off by default.
 
 ## CLI equivalents
 

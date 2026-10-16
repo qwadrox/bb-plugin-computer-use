@@ -10,7 +10,6 @@ import {
 } from "./motion.js";
 
 const Dialog = DialogPrimitive.Root;
-const DialogTrigger = DialogPrimitive.Trigger;
 const DialogClose = DialogPrimitive.Close;
 
 const DialogOverlay = React.forwardRef<
@@ -111,7 +110,6 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,
-  DialogTrigger,
   DialogClose,
   DialogContent,
   DialogHeader,

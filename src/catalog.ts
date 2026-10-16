@@ -1,7 +1,13 @@
 import { z } from "zod";
 
 /** Agent-facing tools are the driver's names with this prefix. */
-export const TOOL_PREFIX = "cua_";
+const TOOL_PREFIX = "cua_";
+
+/** What the app shows while a tool runs and after it finished. */
+export interface ToolLabels {
+  pending: string;
+  completed: string;
+}
 
 /**
  * Arguments the plugin supplies itself. `session` carries the thread's Cua
@@ -64,7 +70,7 @@ export interface MetaTool {
   name: string;
   description: string;
   parameters: z.ZodObject<z.ZodRawShape>;
-  labels: { pending: string; completed: string };
+  labels: ToolLabels;
 }
 
 export const META_TOOLS: readonly MetaTool[] = [
@@ -93,5 +99,3 @@ export const META_TOOLS: readonly MetaTool[] = [
     labels: { pending: "Checking Cua Driver", completed: "Checked Cua Driver" },
   },
 ];
-
-export const META_TOOL_NAMES: ReadonlySet<string> = new Set(META_TOOLS.map((tool) => tool.name));

@@ -89,6 +89,42 @@ sequenceDiagram
 `install {version: null}` (the newest, untested release) runs Cua's one-line
 script from cua.ai instead.
 
+## Browser extension path
+
+The optional `browser_*` tools do not go through `cua-driver`. They reach the
+extension through the host worker and a per-user socket:
+
+```mermaid
+flowchart LR
+  A[agent] -- browser_* tool --> S[server.ts<br/>browser tools]
+  S -- "host RPC: browserCall {method, params, browser}" --> H[host.ts<br/>callBrowser]
+  H -- "unix socket per browser (s/pid.sock)" --> B[bridge.mjs<br/>native messaging host]
+  B -- "stdio, length-prefixed JSON" --> E[extension background.ts<br/>chrome.debugger]
+  E --> T[(tabs)]
+```
+
+- `server.ts` checks the **Browser extension** switch, asks for approval when
+  **Ask before sensitive actions** is on, and calls `browserCall` on the host
+  (`src/contract.ts`).
+- `callBrowser` in `src/browser-host.ts` lists the sockets in
+  `agent-browser-bridge/s/` (under `~/Library/Application Support` on macOS,
+  `~/.local/share` on Linux), asks each one for `hello`, and picks the browser
+  named by `browser` or the only one. Several connected browsers with no name
+  is an error.
+- `bridge.mjs` is `src/browser-bridge-script.ts`, written by **Install bridge**.
+  The browser starts it when the extension connects, and it relays between
+  that browser's native messaging port and its socket. It exits when the browser
+  closes its stdin.
+- `browser-extension/src/background.ts` runs each method: tabs and tab groups
+  through `chrome.tabs`, page reads and input through `chrome.debugger`. The
+  reply goes back on the same port, keyed by the request id.
+
+Setup failures (`unsupported`, `not_installed`, `not_connected`) come back as
+codes, and `server.ts` turns them into a result that points the agent to the
+settings page. Other failures, such as `no_such_browser` or `several_browsers`,
+return their message. The card's install, remove and status actions use the
+host's `browserBridge` method.
+
 ## Session configuration
 
 ```mermaid

@@ -7,10 +7,12 @@ plus an optional Chromium extension in `browser-extension/` (npm workspace).
 
 ```sh
 npm install            # if better-sqlite3 fails: --ignore-scripts, then PYTHON=/usr/bin/python3 npm rebuild better-sqlite3
-npm run check          # typecheck (plugin + extension), tests, plugin build, extension build; CI runs the same
+npm run check          # typecheck (plugin + extension), tests, plugin build, extension build; CI runs these and test:network too
 npm run test:network   # recorded installer checksums against what GitHub serves
-npm run test:live      # drives Calculator through this Mac's Cua Driver
-npm run build:extension && npm run test:browser   # extension end to end in a throwaway headless Chromium
+npm run test:live      # CUA_LIVE=1: Calculator through this Mac's Cua Driver
+                       # CUA_LIVE_CHROME_PID=<pid> also runs a download check in a Chrome started with remote debugging (live.test.ts header)
+npm run build:extension && CHROMIUM=<path> npm run test:browser   # extension end to end in a throwaway headless Chromium
+                       # CHROMIUM: Chrome for Testing or Chromium; default is a Playwright build in ~/Library/Caches/ms-playwright
 npm run sync:tools     # refresh the tested driver snapshot and installer checksums
 ```
 
@@ -21,13 +23,14 @@ change only in sessions that start afterwards.
 ## Where things live
 
 ```
-server.ts                plugin factory: settings, tools, configure(), rpc, cli, events
+server.ts                plugin factory: settings, tools, configure(), rpc (rpcContract: app ⇄ server), cli, events
 host.ts                  host worker: find cua-driver, readiness, MCP session, installs, browser bridge
 app.tsx                  settings cards and the approval card
+components/ui/, lib/utils.ts   shadcn-style UI primitives used by app.tsx
 src/exposure.ts          reviewed exposure per driver tool; the sensitive-action list
 src/catalog.ts           agent tool names, meta tools, schema overrides
 src/policy.ts            routing decision
-src/contract.ts          server ⇄ host RPC contract
+src/contract.ts          server ⇄ host RPC contract (host methods, incl. browserBridge and browserCall)
 src/driver-tools.ts      normalize a driver's tools/list
 src/drift.ts             compare a machine's tools with the tested snapshot
 src/snapshot.ts, src/installer.ts   tested driver catalog and installer checksums
@@ -36,8 +39,13 @@ src/browser-tools.ts     browser_* agent tools of the extension
 src/browser-host.ts      extension bridge: install, sockets, calls
 src/browser-bridge-script.ts  native messaging host the browser starts
 skills/cua-computer-use/ agent skill injected when the tools are offered
+scripts/sync-driver-tools.mjs  npm run sync:tools: rewrites the snapshot and installer checksums
+icons/                   plugin icon (package.json branding)
+live.test.ts, browser.e2e.test.ts   opt-in: npm run test:live, npm run test:browser
+.github/workflows/       ci.yml, driver-drift.yml (daily driver check, opens a PR), publish-extension.yml (Web Store)
 docs/REFERENCE.md        user-facing behaviour in full (settings, routing, safety)
-docs/SPEC.md, docs/ARCHITECTURE.md, docs/SETTINGS-UI.md   design notes
+docs/SPEC.md, docs/ARCHITECTURE.md, docs/SETTINGS-UI.md, docs/PLAN.md   design notes (SPEC is the original design)
+docs/MARKETPLACE.md      the bb marketplace entry and the release steps
 ```
 
 ## Rules that are easy to break
@@ -52,9 +60,10 @@ docs/SPEC.md, docs/ARCHITECTURE.md, docs/SETTINGS-UI.md   design notes
 - **Safety switches default to the permissive choice and stay switchable**
   (the user prefers automation); new risky tools still start off.
 - **The extension's ids are pinned.** The native host name must match
-  `browser-extension/src/shared.ts`. `EXTENSION_IDS` in `src/browser-host.ts`
-  lists the unpacked id (fixed by the manifest `key`); add the Web Store id
-  there once published. Installed paths stay `agent-browser-bridge`.
+  `browser-extension/src/shared.ts`. `EXTENSION_IDS` in `src/contract.ts`
+  lists both the unpacked id (fixed by the manifest `key`) and the Chrome Web
+  Store id; keep them in step with the manifest `key` and the store listing.
+  Installed paths stay `agent-browser-bridge`.
 - **Branding:** the extension is "Browser Bridge for bb" with its own icon.
   Use no bb or Cua logo or artwork.
 - Never bundle Cua Driver binaries; installs run only on the user's request.

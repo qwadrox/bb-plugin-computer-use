@@ -6,7 +6,11 @@ Thanks for helping. This plugin follows bb's community conventions.
 
 - Open an issue first for features and UI changes; bug fixes can go straight
   to a PR.
-- Run `npm run check` (typecheck, tests, `bb plugin build`). CI runs the same.
+- Run `npm run check` (typecheck, tests, plugin and extension builds). CI runs
+  those too, plus `npm run test:network` against the recorded installer
+  checksums. The opt-in suites are not in CI: `npm run test:live` needs Cua
+  Driver on a Mac, and `npm run test:browser` needs a Chromium binary in
+  `CHROMIUM`. Run them when your change touches what they cover.
 - Keep pure logic in `src/` and unit-test it. Server and host behavior is
   tested with `@get-bb/plugin-sdk/testing`; do not mock the fake host's
   storage.
