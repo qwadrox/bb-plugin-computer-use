@@ -74,9 +74,9 @@ describe("settings sections", () => {
     expect(app.settingsSections.map((section) => ({ id: section.id, title: section.title }))).toEqual([
       { id: "routing", title: "Routing mode" },
       { id: "provider-overrides", title: "Provider overrides" },
+      { id: "browser-extension", title: "Browser extension" },
       { id: "agent-tools", title: "Agent tools" },
       { id: "driver-machines", title: "Cua Driver on your machines" },
-      { id: "browser-extension", title: "Browser extension" },
       { id: "about", title: "About Desktop & Browser Agent" },
     ]);
   });

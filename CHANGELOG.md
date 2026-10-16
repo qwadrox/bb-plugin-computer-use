@@ -12,6 +12,8 @@
   card says why the extension is the better choice for web pages: agents use
   the browser you are signed in to, in any tab, without extra grants or
   bringing it to the front, and **Pause agents** in the toolbar stops them.
+- **The Browser extension card comes third** in the settings page, right after
+  the routing cards and before Agent tools.
 - **The settings page notices a closed driver connection.** It updates when a
   machine's driver connection closes on idle timeout, after a grant change or
   update, or on a disconnect request.

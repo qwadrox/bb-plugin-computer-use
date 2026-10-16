@@ -9,20 +9,20 @@ appearing as a nested card inside one large group:
 1. **Routing mode** keeps the three routing choices visible because this is the
    primary decision.
 2. **Provider overrides** starts collapsed and expands to the provider list.
-3. **Agent tools** explains the three exposures (dedicated tool, through
-   `cua_call`, off), notes unreviewed tools from a newer driver, and expands to
-   every driver tool with a select per row (default, tool, call, off). The
-   summary line counts each exposure.
-4. **Cua Driver on your machines** gives every enrolled machine an expandable
-   setup checklist, including whether its driver is the tested version and
-   what drifted. Machines needing attention open automatically; manual setup
-   and troubleshooting commands stay collapsed beneath the list.
-5. **Browser extension** is the optional Browser Bridge for bb. A checkbox
+3. **Browser extension** is the optional Browser Bridge for bb. A checkbox
    (off by default) offers the `browser_*` tools; only when it is on does the
    card show each machine's bridge (Install bridge / Remove bridge, which
    browsers are set up and connected), the Chrome Web Store link, the Load unpacked steps with the
    extension folder and a Copy button, and the extension id. Like the routing
    mode, the checkbox lives in plugin storage so it appears once.
+4. **Agent tools** explains the three exposures (dedicated tool, through
+   `cua_call`, off), notes unreviewed tools from a newer driver, and expands to
+   every driver tool with a select per row (default, tool, call, off). The
+   summary line counts each exposure.
+5. **Cua Driver on your machines** gives every enrolled machine an expandable
+   setup checklist, including whether its driver is the tested version and
+   what drifted. Machines needing attention open automatically; manual setup
+   and troubleshooting commands stay collapsed beneath the list.
 6. **About Desktop & Browser Agent** credits Cua AI and links to the official Cua Driver
    documentation and source repository.
 

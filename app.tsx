@@ -20,6 +20,13 @@ export default definePluginApp((app) => {
     component: ProviderOverridesSettings,
   });
   app.slots.settingsSection({
+    id: "browser-extension",
+    title: "Browser extension",
+    description:
+      "Optional, recommended for web pages. Agents work in any tab of your signed-in browser without extra grants or bringing it to the front, and you can pause them from the toolbar. Without it they use Cua Driver's browser window tools.",
+    component: BrowserExtensionSettings,
+  });
+  app.slots.settingsSection({
     id: "agent-tools",
     title: "Agent tools",
     description: "Choose how agents reach each Cua Driver tool. Changes apply to the next session.",
@@ -30,13 +37,6 @@ export default definePluginApp((app) => {
     title: "Cua Driver on your machines",
     description: "Manage Cua Driver on the machines running your threads.",
     component: DriverMachinesSettings,
-  });
-  app.slots.settingsSection({
-    id: "browser-extension",
-    title: "Browser extension",
-    description:
-      "Optional, recommended for web pages. Agents work in any tab of your signed-in browser without extra grants or bringing it to the front, and you can pause them from the toolbar. Without it they use Cua Driver's browser window tools.",
-    component: BrowserExtensionSettings,
   });
   app.slots.settingsSection({
     id: "about",
