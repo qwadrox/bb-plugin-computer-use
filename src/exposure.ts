@@ -154,6 +154,57 @@ export function normalizeOverrides(input: unknown): Record<string, Exposure> {
   return overrides;
 }
 
+/** True when a browser_prepare call asks to attach to a person's own signed-in profile. */
+export function requestsExistingProfile(tool: string, args: Readonly<Record<string, unknown>>): boolean {
+  if (tool !== "browser_prepare") return false;
+  const strategy = args.strategy;
+  return typeof strategy === "object" && strategy !== null && (strategy as { kind?: unknown }).kind === "existing_profile";
+}
+
+/**
+ * Calls that reach past the target window: clipboard text, the whole screen,
+ * local files, code execution. Each reason completes "The agent wants to …".
+ */
+const SENSITIVE_TOOLS: Readonly<Record<string, string>> = {
+  clipboard_write: "replace what is on your clipboard",
+  get_desktop_state: "capture your whole screen, every window included",
+  browser_set_input_files: "upload files from this machine to a web page",
+  browser_download: "save a file from a web page to this machine",
+  run_script: "run a script on this machine",
+  kill_app: "force-quit an app",
+  install_extension: "install a browser extension",
+  set_config: "change Cua Driver's configuration",
+  start_recording: "record your screen",
+  replay_trajectory: "replay recorded actions",
+};
+
+export interface SensitiveAction {
+  /** What an approval "for this thread" covers. */
+  key: string;
+  reason: string;
+}
+
+/**
+ * Why a call needs the user's approval while **Ask before sensitive actions**
+ * is on, or null when it does not. Listing clipboard types or preparing an
+ * isolated browser asks nothing.
+ */
+export function sensitiveAction(name: string, args: Readonly<Record<string, unknown>>): SensitiveAction | null {
+  if (name === "clipboard_read") {
+    return args.include_text === true ? { key: "clipboard_read", reason: "read the text on your clipboard, which may be a copied password" } : null;
+  }
+  if (requestsExistingProfile(name, args)) {
+    return { key: "browser_prepare:existing_profile", reason: "attach to your signed-in browser, with everything you are logged in to" };
+  }
+  const reason = SENSITIVE_TOOLS[name];
+  return reason === undefined ? null : { key: name, reason };
+}
+
+/** Tools that may ask first, for the settings list. */
+export function mayAskFirst(name: string): boolean {
+  return name === "clipboard_read" || name === "browser_prepare" || SENSITIVE_TOOLS[name] !== undefined;
+}
+
 export function presentationFor(name: string, driverTool: DriverTool | undefined): {
   description: string;
   labels: { pending: string; completed: string };

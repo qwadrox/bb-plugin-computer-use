@@ -62,6 +62,7 @@ Declarative (`bb.settings.define`, editable via bb's form and
 | `browserTools` | boolean | `true` |
 | `clipboardTools` | boolean | `true` |
 | `signedInBrowserProfiles` | boolean | `false` |
+| `confirmSensitiveTools` | boolean | `false` |
 | `sessionPrefix` | string | `bb` |
 
 Plugin storage (`bb.storage.kv`):

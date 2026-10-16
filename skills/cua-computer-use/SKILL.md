@@ -21,6 +21,10 @@ names here carry the `cua_` prefix.
   When a tool says it is off, tell the user, and do not reach the same result
   another way (shell, `osascript`, AppleScript, `kill`, another automation
   tool). They can turn it on in Settings → Plugins → Computer Use → Agent tools.
+- The user may have asked to approve sensitive calls (clipboard text,
+  whole-screen capture, file uploads and downloads, attaching to a signed-in
+  browser). Such a call waits for their answer in the thread; if it is not
+  allowed, continue without it.
 - Sessions are managed for you. Do not call `start_session` or `end_session`,
   and never run `cua-driver stop`.
 - `cua_status` reports install, version, service and macOS permissions. If it

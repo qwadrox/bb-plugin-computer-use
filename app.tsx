@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
-import { definePluginApp, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, useRealtime, useRpc, type PluginPendingInteractionProps } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EASE_BOUNCE_CLASS, EASE_OUT_CLASS } from "@/components/ui/motion";
@@ -851,6 +851,9 @@ function ToolRow({ tool, busy, onChange }: { tool: ToolView; busy: boolean; onCh
         {!tool.groupEnabled ? (
           <span className="shrink-0 text-xs text-muted-foreground">{tool.group} tools off</span>
         ) : null}
+        {tool.asksFirst && tool.exposure !== "off" ? (
+          <span className="shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">asks first</span>
+        ) : null}
         <Hint label={tool.name}>{tool.summary || "No description."}</Hint>
       </span>
       <select
@@ -923,6 +926,61 @@ export function AgentToolsSettings() {
   );
 }
 
+interface ApprovalRequest {
+  tool: string;
+  reason: string;
+  arguments: string;
+}
+
+function readApproval(payload: unknown): ApprovalRequest | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const { tool, reason, arguments: args } = payload as Record<string, unknown>;
+  if (typeof tool !== "string" || typeof reason !== "string") return null;
+  return { tool, reason, arguments: typeof args === "string" ? args : "{}" };
+}
+
+/** Asks the user to allow one sensitive driver call (Ask before sensitive actions). */
+export function ApproveToolCard({ interaction, submit, cancel }: PluginPendingInteractionProps) {
+  const [answering, setAnswering] = useState(false);
+  const request = readApproval(interaction.payload);
+  const answer = (action: () => Promise<void>) => {
+    setAnswering(true);
+    void action().catch((error: unknown) => {
+      toast.error(errorMessage(error));
+      setAnswering(false);
+    });
+  };
+
+  return (
+    <div className="space-y-3 p-3" data-approval-request={request?.tool}>
+      <p className="text-sm font-medium text-foreground">{interaction.title}</p>
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {request === null ? (
+          "The agent wants to use a sensitive Cua Driver tool."
+        ) : (
+          <>
+            The agent wants to {request.reason} with <code className="text-foreground">cua_{request.tool}</code>.
+          </>
+        )}
+      </p>
+      {request !== null && request.arguments !== "{}" ? (
+        <pre className="max-h-40 overflow-auto rounded-md bg-muted/50 p-2 text-xs text-foreground">{request.arguments}</pre>
+      ) : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" size="sm" disabled={answering} onClick={() => answer(cancel)}>
+          Don't allow
+        </Button>
+        <Button variant="outline" size="sm" disabled={answering} onClick={() => answer(() => submit({ allow: "thread" }))}>
+          Allow for this thread
+        </Button>
+        <Button size="sm" disabled={answering} onClick={() => answer(() => submit({ allow: "once" }))}>
+          Allow once
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AboutComputerUse() {
   return (
     <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
@@ -971,4 +1029,6 @@ export default definePluginApp((app) => {
     title: "About Computer Use",
     component: AboutComputerUse,
   });
+  // The id must match APPROVAL_RENDERER in server.ts.
+  app.slots.pendingInteraction({ id: "approve-tool", component: ApproveToolCard });
 });

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Ask before sensitive actions** (setting, off by default). When on, reading
+  clipboard text, writing the clipboard, whole-screen capture, file uploads
+  and downloads, attaching to a signed-in browser, and the code, kill,
+  recording, extension and configuration tools wait for the user's approval
+  in the thread: allow once, allow for the thread, or don't allow. Built on
+  `bb.ui.requestInput` with an `approve-tool` pending-interaction card; the
+  Agent tools list marks these tools "asks first".
+
 ## 0.3.0
 
 Forked from bb-plugin-cua-driver as **Computer Use** (plugin id

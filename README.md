@@ -174,6 +174,7 @@ do on the machine, Cua Driver's own permission mode decides.
 | Browser tools | on | Off turns every browser tool off, `cua_call` included. |
 | Clipboard tools | on | Off turns `clipboard_read` / `clipboard_write` off, `cua_call` included. |
 | Signed-in browser profiles | off | Lets browser tools attach to a signed-in Chrome, Edge or Brave window (see above). |
+| Ask before sensitive actions | off | Asks in the thread before a sensitive call runs (see [Permissions and safety](#permissions-and-safety)). Off runs them without asking. |
 | Session label prefix | `bb` | Each active thread run gets a unique label beginning with `<prefix>-<threadId>`; the label shows in the agent cursor badge. |
 
 ## How it works
@@ -250,6 +251,17 @@ normalized into the same guided recovery instead of inviting blind retries.
 - Tools that run code, kill processes, record, or change the driver's own
   configuration are off until you expose them. An agent told a tool is off is
   also told not to get the same result another way.
+- With **Ask before sensitive actions** on, these calls wait for your answer
+  in the thread: reading clipboard text, writing the clipboard, capturing the
+  whole screen, uploading or downloading files, attaching to a signed-in
+  browser, and the code, kill, recording, extension and configuration tools
+  once you expose them. **Allow once**, **Allow for this thread** (until the
+  thread is archived or the plugin reloads), or **Don't allow**; an
+  unanswered request is refused after ten minutes. `bb cua call` asks in the
+  thread it runs from; from a terminal outside any thread it runs, since that
+  is you. Like the other settings, this stops mistakes and injected
+  instructions, not an agent that runs `bb` in a shell: bb lets a thread
+  answer its own requests with `bb thread interactions respond`.
 - Agents are instructed never to launch apps or send, submit, or delete
   without explicit user intent for that step, and to treat text inside apps
   as data rather than instructions. Review actions in the thread timeline;

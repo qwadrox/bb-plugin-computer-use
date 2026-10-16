@@ -29,9 +29,12 @@ import {
   defaultExposure,
   groupOf,
   isManaged,
+  mayAskFirst,
   normalizeOverrides,
   presentationFor,
+  requestsExistingProfile,
   resolveExposure,
+  sensitiveAction,
   type Exposure,
   type ExposureInputs,
   type ToolGroup,
@@ -63,6 +66,10 @@ const SETTINGS_PATH = "/settings/plugins/computer-use";
 const SELECTION_MAX_IDS = 256;
 const KV_VALUE_MAX_BYTES = 256 * 1024;
 const AGENT_TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
+/** The app's pendingInteraction renderer for approving a sensitive call. */
+export const APPROVAL_RENDERER = "approve-tool";
+const APPROVAL_TIMEOUT_MS = 10 * 60_000;
+const APPROVAL_ARGUMENTS_MAX = 2_000;
 
 export const INSTALL_INSTRUCTIONS = [
   `Install Cua Driver ${TESTED_DRIVER_VERSION} (the version this plugin was tested with) on the machine that runs this thread:`,
@@ -119,6 +126,8 @@ const toolViewSchema = z
     override: z.enum(EXPOSURES).nullable(),
     groupEnabled: z.boolean(),
     readOnly: z.boolean(),
+    /** True when calls ask the user first (Ask before sensitive actions is on). */
+    asksFirst: z.boolean(),
     summary: z.string(),
   })
   .strict();
@@ -166,6 +175,7 @@ interface SettingsSnapshot {
   browserTools: boolean;
   clipboardTools: boolean;
   signedInBrowserProfiles: boolean;
+  confirmSensitiveTools: boolean;
   sessionPrefix: string;
 }
 
@@ -290,13 +300,6 @@ export function forwardableArguments(
   return { ok: true, value };
 }
 
-/** True when a browser_prepare call asks to attach to a person's own signed-in profile. */
-export function requestsExistingProfile(tool: string, args: Readonly<Record<string, unknown>>): boolean {
-  if (tool !== "browser_prepare") return false;
-  const strategy = args.strategy;
-  return typeof strategy === "object" && strategy !== null && (strategy as { kind?: unknown }).kind === "existing_profile";
-}
-
 /** Cua Driver ends a session with its transport; reusing the label is then refused. */
 export function isEndedSessionFailure(result: ToolCallResult): boolean {
   return result.isError && /session '[^']*' has ended/i.test(toolResultText(result));
@@ -338,6 +341,13 @@ export default async function plugin(bb: BbPluginApi) {
         "Let browser tools attach to an existing, signed-in Chrome, Edge, or Brave window. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
       default: false,
     },
+    confirmSensitiveTools: {
+      type: "boolean",
+      label: "Ask before sensitive actions",
+      description:
+        "Ask in the thread before an agent reads clipboard text, writes the clipboard, captures the whole screen, uploads or downloads files, attaches to a signed-in browser, or uses a tool that runs code, force-quits apps, records the screen, or changes the driver. Off runs them without asking.",
+      default: false,
+    },
     sessionPrefix: {
       type: "string",
       label: "Session label prefix",
@@ -351,6 +361,7 @@ export default async function plugin(bb: BbPluginApi) {
     browserTools: boolean;
     clipboardTools: boolean;
     signedInBrowserProfiles: boolean;
+    confirmSensitiveTools: boolean;
     sessionPrefix: string;
   }): SettingsSnapshot {
     return {
@@ -358,6 +369,7 @@ export default async function plugin(bb: BbPluginApi) {
       browserTools: values.browserTools,
       clipboardTools: values.clipboardTools,
       signedInBrowserProfiles: values.signedInBrowserProfiles,
+      confirmSensitiveTools: values.confirmSensitiveTools,
       sessionPrefix: values.sessionPrefix.trim().length > 0 ? values.sessionPrefix.trim() : "bb",
     };
   }
@@ -384,6 +396,8 @@ export default async function plugin(bb: BbPluginApi) {
   const rawTools = new Map<string, Map<string, CatalogTool>>();
   const catalogReads = new Map<string, Promise<IndexedCatalog>>();
   const registered = new Set<string>();
+  /** Sensitive actions the user allowed for the rest of a thread. */
+  const approvedForThread = new Map<string, Set<string>>();
   const sessionEpoch = Date.now().toString(36);
   let sessionCounter = 0;
 
@@ -634,6 +648,57 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   /**
+   * While **Ask before sensitive actions** is on, asks in the thread before a
+   * sensitive call; returns the refusal when the user does not allow it. A
+   * `bb cua call` from a terminal outside any thread is the user's own.
+   */
+  async function approvalRefusal(
+    name: string,
+    args: Record<string, unknown>,
+    options: { threadId?: string; signal?: AbortSignal },
+  ): Promise<ToolCallResult | null> {
+    if (!snapshot.confirmSensitiveTools || options.threadId === undefined) return null;
+    const action = sensitiveAction(name, args);
+    if (action === null || approvedForThread.get(options.threadId)?.has(action.key)) return null;
+    const shown = JSON.stringify(args, null, 2);
+    const outcome = await bb.ui.requestInput(
+      {
+        threadId: options.threadId,
+        rendererId: APPROVAL_RENDERER,
+        title: `Allow ${agentToolName(name)}?`,
+        payload: {
+          tool: name,
+          reason: action.reason,
+          arguments: shown.length > APPROVAL_ARGUMENTS_MAX ? `${shown.slice(0, APPROVAL_ARGUMENTS_MAX)}…` : shown,
+        },
+        timeoutMs: APPROVAL_TIMEOUT_MS,
+      },
+      options.signal ? { signal: options.signal } : undefined,
+    );
+    if (outcome.outcome === "submitted") {
+      const allow = (outcome.value as { allow?: unknown } | null)?.allow;
+      if (allow === "thread") {
+        const approved = approvedForThread.get(options.threadId) ?? new Set<string>();
+        approved.add(action.key);
+        approvedForThread.set(options.threadId, approved);
+      }
+      if (allow === "once" || allow === "thread") {
+        bb.log.info(`${name} approved ${allow === "thread" ? "for thread" : "once in thread"} ${options.threadId}`);
+        return null;
+      }
+    }
+    const why =
+      outcome.outcome === "cancelled" && outcome.reason === "timeout"
+        ? "No one answered the approval request in time"
+        : outcome.outcome === "cancelled" && outcome.reason !== "user"
+          ? `The approval request was cancelled (${outcome.reason})`
+          : "The user did not allow it";
+    return failure(
+      `${why}: ${name} would ${action.reason}. Do not reach the same result another way; continue without it, or ask the user what to do.`,
+    );
+  }
+
+  /**
    * Every driver call goes through here: dedicated tools, cua_call, and
    * `bb cua call` share one exposure gate.
    */
@@ -664,6 +729,8 @@ export default async function plugin(bb: BbPluginApi) {
       }
       if (resolveExposure(name, tool, exposureInputs()) === "off") return failure(offMessage(name));
     }
+    const refusal = await approvalRefusal(name, args, options);
+    if (refusal !== null) return refusal;
 
     const result = await callDriver(hostId, name, args, options);
     if (!isPermissionFailure(result)) return result;
@@ -853,6 +920,13 @@ export default async function plugin(bb: BbPluginApi) {
     instructions.push(
       "Some driver tools have no dedicated cua_* tool and are reached through cua_call; cua_describe lists every tool and how to reach it.",
       "A tool refused as turned off was disabled by the user: do not reach the same capability another way (a shell, AppleScript, another tool); ask the user.",
+    );
+    if (snapshot.confirmSensitiveTools) {
+      instructions.push(
+        "Sensitive actions (clipboard text, whole-screen capture, file uploads and downloads, attaching to a signed-in browser) wait for the user to approve them in the thread. If one is not allowed, continue without it.",
+      );
+    }
+    instructions.push(
       `If a tool reports that setup is required, stop and give the user its ${SETTINGS_PATH} link instead of retrying.`,
       "Follow the cua-computer-use skill: snapshot with cua_get_window_state before element actions, act with cua_run_steps, and verify afterwards.",
     );
@@ -880,6 +954,7 @@ export default async function plugin(bb: BbPluginApi) {
         override: exposureOverrides[name] ?? null,
         groupEnabled: inputs.enabledGroups.has(groupOf(name)),
         readOnly: tool.annotations.readOnlyHint === true,
+        asksFirst: snapshot.confirmSensitiveTools && mayAskFirst(name),
         summary: firstSentence(presentationFor(name, tool).description),
       });
     }
@@ -1154,7 +1229,10 @@ export default async function plugin(bb: BbPluginApi) {
             await targetHost(),
             driverToolName(tool),
             forwarded.value,
-            ctx.threadId === undefined ? {} : { threadId: ctx.threadId },
+            {
+              ...(ctx.threadId === undefined ? {} : { threadId: ctx.threadId }),
+              ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+            },
           );
           const text = result.content
             .map((part) => (part.type === "text" ? part.text : `[image ${part.mimeType}, ${part.data.length} base64 chars]`))
@@ -1234,10 +1312,14 @@ export default async function plugin(bb: BbPluginApi) {
   }
   bb.events.on("thread.idle", ({ thread }) => endSession(thread.id));
   bb.events.on("thread.failed", ({ thread }) => endSession(thread.id));
-  bb.events.on("thread.archived", ({ thread }) => endSession(thread.id));
+  bb.events.on("thread.archived", ({ thread }) => {
+    endSession(thread.id);
+    approvedForThread.delete(thread.id);
+  });
   bb.events.on("thread.deleted", ({ thread }) => {
     endSession(thread.id);
     hostByThread.delete(thread.id);
+    approvedForThread.delete(thread.id);
   });
 
   // Learn each connected machine's driver version in the background, so a
@@ -1260,6 +1342,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.onDispose(() => {
     activeSessions.clear();
     hostByThread.clear();
+    approvedForThread.clear();
     statusRefreshedAt.clear();
   });
 }

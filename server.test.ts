@@ -412,6 +412,108 @@ describe("driver calls", () => {
   });
 });
 
+describe("asking before sensitive actions", () => {
+  /** Waits until the plugin asks, and returns that request. */
+  async function asked(harness: Awaited<ReturnType<typeof load>>["harness"]) {
+    await vi.waitFor(() => expect(harness.inspection.pendingInteractions).toHaveLength(1));
+    return harness.inspection.pendingInteractions[0]!;
+  }
+
+  it("runs sensitive tools without asking while the setting is off", async () => {
+    const { harness, toolCalls } = await load();
+    expect(structured(await harness.behavior.callAgentTool("cua_clipboard_read", { include_text: true })).isError).toBe(false);
+    expect(harness.inspection.pendingInteractions).toHaveLength(0);
+    expect(toolCalls().map((call) => call.name)).toEqual(["clipboard_read"]);
+    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(configuration.instructions).not.toMatch(/wait for the user to approve/);
+  });
+
+  it("asks in the thread and runs the call once it is allowed", async () => {
+    const { harness, toolCalls } = await load({ settings: { confirmSensitiveTools: true } });
+    const pending = harness.behavior.callAgentTool("cua_clipboard_read", { include_text: true }, { threadId: "thr_1" });
+    const request = await asked(harness);
+    expect(request).toMatchObject({ threadId: "thr_1", rendererId: "approve-tool", title: "Allow cua_clipboard_read?" });
+    expect(request.payload).toMatchObject({ tool: "clipboard_read", reason: expect.stringMatching(/copied password/) });
+    expect(toolCalls()).toHaveLength(0);
+
+    harness.behavior.submitInteraction(request.id, { allow: "once" });
+    expect(structured(await pending).isError).toBe(false);
+    expect(toolCalls().map((call) => call.name)).toEqual(["clipboard_read"]);
+
+    // "Once" covers one call; the next one asks again.
+    const again = harness.behavior.callAgentTool("cua_clipboard_read", { include_text: true }, { threadId: "thr_1" });
+    harness.behavior.submitInteraction((await asked(harness)).id, { allow: "once" });
+    await again;
+    expect(toolCalls()).toHaveLength(2);
+  });
+
+  it("refuses the call when the user does not allow it", async () => {
+    const { harness, toolCalls } = await load({ settings: { confirmSensitiveTools: true } });
+    const pending = harness.behavior.callAgentTool("cua_get_desktop_state", {}, { threadId: "thr_1" });
+    harness.behavior.cancelInteraction((await asked(harness)).id);
+    const refused = structured(await pending);
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/The user did not allow it: get_desktop_state would capture your whole screen.*Do not reach the same result another way/s);
+    expect(toolCalls()).toHaveLength(0);
+  });
+
+  it("remembers an approval for the rest of the thread, and only that thread", async () => {
+    const { harness, toolCalls } = await load({ settings: { confirmSensitiveTools: true } });
+    const first = harness.behavior.callAgentTool("cua_browser_set_input_files", { ref: "r1", files: ["/tmp/a.pdf"] }, { threadId: "thr_1" });
+    const request = await asked(harness);
+    expect(request.payload).toMatchObject({ arguments: expect.stringContaining("/tmp/a.pdf") });
+    harness.behavior.submitInteraction(request.id, { allow: "thread" });
+    await first;
+    await harness.behavior.callAgentTool("cua_browser_set_input_files", { ref: "r2", files: ["/tmp/b.pdf"] }, { threadId: "thr_1" });
+    expect(harness.inspection.pendingInteractions).toHaveLength(0);
+    expect(toolCalls()).toHaveLength(2);
+
+    const other = harness.behavior.callAgentTool("cua_browser_set_input_files", { ref: "r3", files: ["/tmp/c.pdf"] }, { threadId: "thr_2" });
+    harness.behavior.cancelInteraction((await asked(harness)).id);
+    expect(structured(await other).isError).toBe(true);
+
+    await harness.behavior.emitThreadEvent("thread.archived", { thread: makeThreadResponse({ id: "thr_1" }) });
+    const archived = harness.behavior.callAgentTool("cua_browser_set_input_files", { ref: "r4", files: ["/tmp/d.pdf"] }, { threadId: "thr_1" });
+    harness.behavior.cancelInteraction((await asked(harness)).id);
+    await archived;
+    expect(toolCalls().filter((call) => call.name === "browser_set_input_files")).toHaveLength(2);
+  });
+
+  it("asks only for the sensitive form of a tool, through cua_call and `bb cua call` too", async () => {
+    const { harness, toolCalls } = await load({ settings: { confirmSensitiveTools: true, signedInBrowserProfiles: true } });
+    await harness.behavior.callAgentTool("cua_clipboard_read", {});
+    await harness.behavior.callAgentTool("cua_browser_prepare", { allow_launch: true });
+    await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" });
+    expect(harness.inspection.pendingInteractions).toHaveLength(0);
+    expect(toolCalls()).toHaveLength(3);
+
+    const attach = harness.behavior.callAgentTool("cua_call", {
+      tool: "browser_prepare",
+      arguments: { pid: 7, window_id: 3, strategy: { kind: "existing_profile" } },
+    });
+    expect((await asked(harness)).payload).toMatchObject({ reason: expect.stringMatching(/signed-in browser/) });
+    harness.behavior.cancelInteraction(harness.inspection.pendingInteractions[0]!.id);
+    expect(structured(await attach).isError).toBe(true);
+
+    const fromThread = harness.behavior.runCli(["call", "clipboard_write", '{"text":"x"}'], { threadId: "thr_1" });
+    harness.behavior.cancelInteraction((await asked(harness)).id);
+    expect((await fromThread).exitCode).toBe(1);
+    // Outside any thread the command is the user's own.
+    expect((await harness.behavior.runCli(["call", "clipboard_write", '{"text":"x"}'])).exitCode).toBe(0);
+    expect(toolCalls()).toHaveLength(4);
+  });
+
+  it("tells agents and the settings list which tools ask first", async () => {
+    const { harness } = await load({ settings: { confirmSensitiveTools: true } });
+    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(configuration.instructions).toMatch(/wait for the user to approve them in the thread/);
+    const state = (await harness.behavior.callRpc("getState", null)) as { tools: Array<{ name: string; asksFirst: boolean }> };
+    const asking = state.tools.filter((tool) => tool.asksFirst).map((tool) => tool.name);
+    expect(asking).toEqual(expect.arrayContaining(["browser_prepare", "browser_set_input_files", "clipboard_read", "get_desktop_state", "run_script"]));
+    expect(asking).not.toContain("click");
+  });
+});
+
 describe("setup guidance", () => {
   it("explains a missing driver through cua_status, the tools, and the rpc state", async () => {
     const { harness, toolCalls } = await load({

@@ -509,3 +509,42 @@ describe("settings sections", () => {
     slot.lifecycle.unmount();
   });
 });
+
+describe("approval requests", () => {
+  const interaction = {
+    id: "int_1",
+    threadId: "thr_1",
+    title: "Allow cua_browser_set_input_files?",
+    payload: { tool: "browser_set_input_files", reason: "upload files from this machine to a web page", arguments: '{\n  "files": ["/tmp/a.pdf"]\n}' },
+    createdAt: 0,
+    expiresAt: null,
+  };
+
+  it("registers the renderer the server asks through", async () => {
+    const { APPROVAL_RENDERER } = await import("./server");
+    const app = await loadPluginApp(() => import("./app"));
+    expect(app.pendingInteractions.map((registration) => registration.id)).toEqual([APPROVAL_RENDERER]);
+  });
+
+  it("shows what the agent wants and answers once, for the thread, or not at all", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const registration = app.pendingInteractions[0]!;
+    for (const [button, expected] of [
+      ["Allow once", { allow: "once" }],
+      ["Allow for this thread", { allow: "thread" }],
+      ["Don't allow", "cancelled"],
+    ] as const) {
+      const answers: unknown[] = [];
+      const slot = renderSlot(registration, {
+        interaction,
+        submit: async (value: unknown) => void answers.push(value),
+        cancel: async () => void answers.push("cancelled"),
+      });
+      expect((await slot.findByText(/The agent wants to upload files from this machine to a web page/)).textContent).toContain("cua_browser_set_input_files");
+      expect(slot.getByText(/\/tmp\/a\.pdf/)).toBeTruthy();
+      fireEvent.click(slot.getByRole("button", { name: button }));
+      await waitFor(() => expect(answers).toEqual([expected]));
+      slot.lifecycle.unmount();
+    }
+  });
+});
