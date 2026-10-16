@@ -1,6 +1,9 @@
 # Specification: Computer Use for bb
 
-Status: v0.1 implemented. Sections marked *later* are planned, not shipped.
+Status: the v0.1 specification, inherited from bb-plugin-cua-driver. Tool
+selection, exposure, drift and installs changed in 0.3.0: see
+[PLAN.md](PLAN.md) and the README. Sections marked *later* are planned, not
+shipped.
 
 ## 1. Goal
 
@@ -51,14 +54,14 @@ Cua Driver is used.
 ## 4. Settings model
 
 Declarative (`bb.settings.define`, editable via bb's form and
-`bb plugin config cua-driver set <key> <value>`):
+`bb plugin config computer-use set <key> <value>`):
 
 | Key | Type | Default |
 | --- | --- | --- |
 | `mode` | select `prefer-native` / `cua-everywhere` / `off` | `prefer-native` |
 | `browserTools` | boolean | `true` |
 | `clipboardTools` | boolean | `true` |
-| `passthroughTools` | boolean | `true` |
+| `signedInBrowserProfiles` | boolean | `false` |
 | `sessionPrefix` | string | `bb` |
 
 Plugin storage (`bb.storage.kv`):
@@ -67,6 +70,8 @@ Plugin storage (`bb.storage.kv`):
 | --- | --- |
 | `policy-overrides` | `Record<providerId, "cua" \| "native" \| "off">` (inherit entries are removed) |
 | `driver-status:<hostId>` | last `DriverStatus` probe for that machine |
+| `catalog:<hostId>` | that machine's driver catalog and version |
+| `tool-exposure` | `Record<tool, "tool" \| "call" \| "off">` user overrides |
 
 Provider ids are dynamic (plugins add providers), so overrides live in kv and
 the UI lists whatever `bb.sdk.providers.list()` returns.
@@ -82,9 +87,9 @@ decision(provider) =
 ```
 
 `configure()` returns `{ tools: enabledToolNames, skills: ["cua-computer-use"],
-instructions }` for `cua`, and `{ tools: [], skills: [] }` otherwise. Group
-toggles remove browser, clipboard, and meta tools; `cua_status` stays even when
-passthrough is off so agents can always diagnose.
+instructions }` for `cua`, and `{ tools: [], skills: [] }` otherwise. The
+selection is the meta tools plus every driver tool whose exposure is `tool`;
+group toggles turn browser or clipboard tools off, `cua_call` included.
 
 ## 6. Tool surface
 

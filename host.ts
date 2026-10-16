@@ -21,7 +21,7 @@ import {
 import { INSTALLER_LAYOUT, TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import { McpStdioClient, type McpChild, type McpContentPart } from "./src/mcp-client.js";
 
-export const PLUGIN_VERSION = "0.2.0";
+export const PLUGIN_VERSION = "0.3.0";
 const BINARY_CACHE_MS = 60_000;
 const PROBE_TIMEOUT_MS = 8_000;
 const GRANT_TIMEOUT_MS = 120_000;

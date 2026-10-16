@@ -49,6 +49,46 @@ sequenceDiagram
   B-->>A: text + image blocks
 ```
 
+## Tool catalog, exposure and drift
+
+```mermaid
+flowchart TD
+  R[refreshStatus: host status probe] --> V{installed, and catalog<br/>missing or another version?}
+  V -- yes --> L[host listTools: tools/list + serverInfo.version]
+  L --> K[normalize + compact<br/>store in kv catalog:hostId]
+  K --> G[registerTool for names not yet registered<br/>permissive schema]
+  K --> D[diff against src/driver-snapshot.json<br/>→ drift report]
+  V -- no --> C
+  G --> C[configure: meta tools + every tool<br/>whose exposure is tool, with the<br/>machine's own schema as override]
+  X[exposure: managed or group off → off<br/>else user override<br/>else src/exposure.ts review<br/>else readOnlyHint ? call : off] --> C
+  X --> CC[cua_call and bb cua call<br/>refuse tools that are off]
+```
+
+`start_session` and `end_session` are managed by the plugin and never exposed.
+A name the machine has not reported triggers one fresh `tools/list` read
+before the call is refused.
+
+## Pinned installs
+
+```mermaid
+sequenceDiagram
+  participant S as plugin server.ts
+  participant H as plugin host.ts
+  participant G as GitHub (cua-driver-rs-vX.Y.Z)
+  S->>H: install {version: tested}
+  H->>H: cua-driver stop (if installed)
+  loop install.sh, _install-rust.sh, _install-common.sh
+    H->>G: download
+    H->>H: sha256 == src/driver-installer.json? else refuse
+  end
+  H->>H: CUA_DRIVER_RS_VERSION=X.Y.Z bash install.sh<br/>(loads its siblings from disk)
+  Note over H: the installer verifies the archive<br/>against SHA256SUMS (+ Sigstore with cosign)
+  H->>H: open CuaDriver.app, re-probe
+```
+
+`install {version: null}` (the newest, untested release) runs Cua's one-line
+script from cua.ai instead.
+
 ## Session configuration
 
 ```mermaid
@@ -58,7 +98,7 @@ flowchart TD
   O -- yes --> D[decision = override]
   O -- no --> M{mode}
   M -- off --> OFF[tools: none]
-  M -- cua-everywhere --> CUA[tools: enabled groups<br/>skill: cua-computer-use<br/>instructions: readiness line]
+  M -- cua-everywhere --> CUA[tools: meta + exposure tool<br/>skill: cua-computer-use<br/>instructions: readiness + drift lines]
   M -- prefer-native --> N{provider has native computer use?}
   N -- yes (codex) --> OFF
   N -- no --> CUA
@@ -76,8 +116,10 @@ flowchart TD
 
 ## Lifecycle rules the plugin relies on
 
-- Plugin tools and skills are static registrations; `configure()` only selects
-  them per resolution. Changes land on the next provider session start.
+- Tools are registered when the plugin loads (the tested snapshot plus each
+  cached machine catalog) and when a machine reports a new name; `configure()`
+  only selects them per resolution. Changes land on the next provider session
+  start.
 - Host workers are lazy and evicted after 5 idle minutes unless retained; the
   plugin retains the worker only while an MCP session is open and releases it
   on the 10-minute idle disconnect, so an idle machine runs no extra process.

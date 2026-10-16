@@ -99,6 +99,8 @@ jobs:
       - name: Test against the new snapshot
         id: test
         continue-on-error: true
+        env:
+          NO_COLOR: "1"
         run: |
           set -o pipefail
           { npm run typecheck && npm test && npm run test:network; } 2>&1 | tee "$RUNNER_TEMP/test.log"

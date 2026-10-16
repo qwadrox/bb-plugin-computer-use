@@ -36,14 +36,14 @@ Checked against bb 0.46.1 (`start-server.js`) and Cua Driver 0.36.0 on
 ### 1. The driver's `tools/list` is the catalog
 
 - On first connection to a machine, read `tools/list` and cache it in kv under
-  `tools:<hostId>:<driverVersion>`.
+  `catalog:<hostId>`, with the driver version it came from.
 - Register one bb tool per driver tool (`cua_<name>`) with a permissive schema
   (`{type: "object", additionalProperties: true}`); `configure()` hands each
   session the driver's exact schema for that machine. The driver stays the only
   validator.
 - Newly seen tool names are registered on the fly. Tools a machine does not
   report are left out of that machine's selection.
-- A bundled snapshot (`src/upstream-schemas.generated.ts`) is used only before
+- A bundled snapshot (`src/driver-snapshot.json`) is used only before
   the first successful `tools/list`, so a fresh install still offers tools.
 - Curated text (short descriptions, progress labels, group) stays as an
   optional overlay keyed by tool name. A tool without an overlay uses the
@@ -75,7 +75,7 @@ Three tiers, decided by the plugin, not by `risk.class`:
   a macOS job downloads the signed `darwin-universal-binary` tarball, verifies
   its checksum, reads `tools/list`, and opens a PR with the schema diff and
   the regenerated snapshot. No permissions or GUI needed.
-- **Locally, on demand:** `npm run sync:schemas` against the installed driver.
+- **Locally, on demand:** `npm run sync:tools` against the installed driver.
 
 ### 4. Pinned driver installs
 
@@ -93,6 +93,12 @@ Three tiers, decided by the plugin, not by `risk.class`:
   exposure policy, and stop-and-ask rules for sending or deleting.
 
 ## Phases
+
+All seven shipped in 0.3.0 (see CHANGELOG.md). Two changes from the design
+above: the macOS CI job reads tools with `cua-driver mcp --direct`, since a
+runner has no CuaDriver.app; and pinned installs also check each installer
+file against a sha256 recorded in `src/driver-installer.json` before running
+it.
 
 1. **Rename and baseline.** Package, plugin id, settings path, docs. Tests green.
 2. **Live catalog.** Dynamic registration from `tools/list`, kv cache,

@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.3.0
+
+Forked from bb-plugin-cua-driver as **Computer Use** (plugin id
+`computer-use`). Tested against Cua Driver 0.36.0 on macOS, with live reads of
+Outlook, Teams and a Brave window.
+
+- **Each machine's own tools.** The plugin reads the driver's `tools/list` on
+  every machine, caches it, and registers tools that a newer driver adds,
+  without a plugin release. The tested 0.36.0 catalog (60 tools, including
+  `run_steps`) is the fallback before a machine has been read.
+- **Exposure policy.** Every driver tool is a dedicated `cua_*` tool,
+  reachable only through `cua_call`, or off. Code execution, `kill_app`,
+  recording, driver configuration and extension installs start off; an
+  unreviewed tool is reachable through `cua_call` only if the driver marks it
+  read-only. `cua_call` obeys the policy instead of bypassing it. New
+  **Agent tools** settings card, `bb cua expose`, and `bb cua tools`. The
+  **Passthrough tools** setting is gone.
+- **Drift report.** `bb cua status`, `bb cua drift`, the machine checklist,
+  and a line in agent instructions name the tools that differ from the tested
+  driver.
+- **Pinned, checksum-verified installs.** Install and update target the tested
+  release by default. The host downloads that release's installer files from
+  GitHub and runs them only if each matches a sha256 recorded in
+  `src/driver-installer.json`. The newest release stays available as an
+  explicit, untested choice (`--latest`).
+- **CI.** `driver-drift` checks daily for a new Cua Driver release on Linux;
+  for one, a macOS job verifies the binary's checksum and Sigstore signature,
+  regenerates the snapshot and checksums, runs the tests, and opens a PR. `ci`
+  pins actions by commit and checks the recorded installer checksums.
+- **Skill.** Rewritten from the upstream 0.36 skill pack: narrow reads,
+  `run_steps` with `observe`, `since: "latest"`, verification at checkpoints,
+  what to do when a tool is off, and when to stop and ask.
+- `bb cua call --json` replaces image data with its size so large screenshots
+  fit bb's CLI output limit.
+
 ## 0.2.0
 
 Validated live against Cua Driver 0.28.2 on macOS (see `docs/TASKS.md`, M2).

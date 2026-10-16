@@ -3,21 +3,26 @@
 Where: **Settings → Plugins → Computer Use**.
 
 bb renders the declarative configuration form first. The plugin then registers
-four sibling settings cards so each concern has its own boundary instead of
+five sibling settings cards so each concern has its own boundary instead of
 appearing as a nested card inside one large group:
 
 1. **Routing mode** keeps the three routing choices visible because this is the
    primary decision.
 2. **Provider overrides** starts collapsed and expands to the provider list.
-3. **Cua Driver on your machines** gives every enrolled machine an expandable
-   setup checklist. Machines needing attention open automatically; manual setup
+3. **Agent tools** explains the three exposures (dedicated tool, through
+   `cua_call`, off), notes unreviewed tools from a newer driver, and expands to
+   every driver tool with a select per row (default, tool, call, off). The
+   summary line counts each exposure.
+4. **Cua Driver on your machines** gives every enrolled machine an expandable
+   setup checklist, including whether its driver is the tested version and
+   what drifted. Machines needing attention open automatically; manual setup
    and troubleshooting commands stay collapsed beneath the list.
-4. **About Computer Use** credits Cua AI and links to the official Cua Driver
+5. **About Computer Use** credits Cua AI and links to the official Cua Driver
    documentation and source repository.
 
 Rows stay on one line. Where a routing mode or checklist item has extra detail,
 a `?` icon slides in when the row is hovered and shows the detail in a tooltip
-on hover or keyboard focus. The exact tool list lives in `bb cua tools`.
+on hover or keyboard focus. `bb cua tools` prints the same tool list.
 
 The routing radio card and the host-rendered `Routing mode` select edit the same
 setting. The card writes through `bb.sdk.plugins.updateSettings`, so both remain
@@ -83,5 +88,6 @@ bb cua mode <prefer-native|cua-everywhere|off>
 bb cua policy [<providerId> <cua|native|off|inherit>] [--json]
 bb cua tools [--host <id>]
 bb cua call <tool> [<json-args>] [--host <id>]
-bb plugin config cua-driver set browserTools false
+bb cua expose run_script call
+bb plugin config computer-use set browserTools false
 ```
