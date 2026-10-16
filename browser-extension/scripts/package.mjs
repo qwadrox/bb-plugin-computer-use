@@ -9,6 +9,11 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, "dist", "manifest.json"), "utf8"));
 delete manifest.key;
+// The store rejects a longer description at upload.
+if (manifest.description.length > 132) {
+  console.error(`manifest description is ${manifest.description.length} characters; the Chrome Web Store allows 132`);
+  process.exit(1);
+}
 const work = mkdtempSync(join(tmpdir(), "extension-"));
 try {
   cpSync(join(root, "dist"), work, { recursive: true });
