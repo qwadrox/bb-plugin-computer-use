@@ -77,8 +77,8 @@ names here carry the `cua_` prefix.
 
 ## Browser tabs through the extension (`browser_*`)
 
-If you have `browser_*` tools, the user installed the optional Agent Browser
-Bridge extension. Prefer them for web pages in the user's own browser: they
+If you have `browser_*` tools, the user installed the optional Browser Bridge
+for bb extension. Prefer them for web pages in the user's own browser: they
 work in background tabs while the user keeps using the browser, and need no
 window, pid or foreground attach.
 

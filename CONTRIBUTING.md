@@ -18,8 +18,9 @@ Thanks for helping. This plugin follows bb's community conventions.
 
 ## Tool catalog changes
 
-`src/catalog.ts` mirrors upstream Cua Driver tools. When you add or change an
-entry, cite the upstream reference
+Each upstream Cua Driver tool has a reviewed exposure in `src/exposure.ts`;
+`src/catalog.ts` holds agent tool names and schema overrides. When you add or
+change an entry, cite the upstream reference
 (<https://cua.ai/docs/reference/cua-driver/mcp-tools>) in the PR and keep
 parameter names identical to upstream so `cua_call` and the typed tools agree.
 
