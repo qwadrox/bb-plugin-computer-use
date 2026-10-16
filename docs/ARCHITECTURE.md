@@ -5,8 +5,8 @@
 ```mermaid
 flowchart LR
   subgraph bbServer["bb server (any machine)"]
-    S[server.ts<br/>settings · policy · tools · rpc · cli]
-    UI[app.tsx<br/>settings section]
+    S[server.ts<br/>settings · policy · tools · rpc<br/>src/cli.ts: bb cua]
+    UI[app.tsx + settings/<br/>settings sections]
     UI -- rpc --> S
   end
   subgraph daemon["bb host daemon (thread's machine)"]

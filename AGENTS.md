@@ -23,20 +23,23 @@ change only in sessions that start afterwards.
 ## Where things live
 
 ```
-server.ts                plugin factory: settings, tools, configure(), rpc (rpcContract: app ⇄ server), cli, events
+server.ts                plugin factory: settings, tools, configure(), rpc (rpcContract: app ⇄ server), events
+src/cli.ts               the `bb cua` command; actions come from server.ts as deps
 host.ts                  host worker: find cua-driver, readiness, MCP session, installs, browser bridge
-app.tsx                  settings cards and the approval card
-components/ui/, lib/utils.ts   shadcn-style UI primitives used by app.tsx
+app.tsx                  app entry: registers the settings sections and the approval card
+settings/                one file per settings section; shared.tsx, use-rpc-resource.ts
+components/ui/, lib/utils.ts   shadcn-style UI primitives used by settings/
 src/exposure.ts          reviewed exposure per driver tool; the sensitive-action list
 src/catalog.ts           agent tool names, meta tools, schema overrides
 src/policy.ts            routing decision
 src/links.ts             URLs, extension ids and install commands shared by server, host and app
+src/errors.ts            errorMessage() for logs and results
 src/contract.ts          server ⇄ host RPC contract (host methods, incl. browserBridge and browserCall)
 src/driver-tools.ts      normalize a driver's tools/list
 src/drift.ts             compare a machine's tools with the tested snapshot
 src/snapshot.ts, src/installer.ts   tested driver catalog and installer checksums
 src/mcp-client.ts        MCP stdio JSON-RPC client
-src/browser-tools.ts     browser_* agent tools of the extension
+src/browser-tools.ts     browser_* agent tools of the extension; params typed by browser-extension/src/shared.ts
 src/browser-host.ts      extension bridge: install, sockets, calls
 src/browser-bridge-script.ts  native messaging host the browser starts
 skills/cua-computer-use/ agent skill injected when the tools are offered
