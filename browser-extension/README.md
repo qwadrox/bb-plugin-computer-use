@@ -57,8 +57,14 @@ to end in a throwaway headless Chromium profile.
 | `storage` | Remember whether agents are paused |
 | `alarms` | Reconnect to the bridge after bb or the browser restarts |
 
-No page content leaves the machine except to the bb agent that asked for it.
-The extension makes no network requests of its own and has no analytics.
+**Privacy.** The extension makes no network requests of its own, has no
+analytics, and collects nothing for its developer. It hands page text, tab
+titles and URLs, and screenshots only to the bb agent on the same computer
+that asked for them, through the local bridge. That agent is a coding agent
+the user runs, and it sends what it reads to the AI model provider the user
+chose in bb (such as Anthropic or OpenAI), under that provider's terms. Data
+is not sold or used for anything but the agent's task. **Pause agents** in
+the popup stops all access.
 
 ## Publishing to the Chrome Web Store
 

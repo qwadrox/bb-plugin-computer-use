@@ -69,8 +69,10 @@ Lets coding agents running in the bb app on the user's own computer read and ope
 
 **Remote code:** No, I am not using remote code. (All JavaScript is in the package.)
 
-**Data usage:** tick no data types. The page text and screenshots an agent asks
-for go only to that agent in bb on the user's own computer.
+**Data usage:** tick **Website content**. The page text and screenshots an
+agent asks for go to that agent in bb on the user's own computer, which sends
+them to the AI model provider the user chose. That is the item's single
+purpose, so the certifications below still hold.
 
 Certify all three:
 
