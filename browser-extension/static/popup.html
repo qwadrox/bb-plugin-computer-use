@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agent Browser Bridge</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon-32.png" width="20" height="20" alt="" />
+      <h1>Agent Browser Bridge</h1>
+    </header>
+    <p id="connection" class="connection" data-state="off">Checking…</p>
+    <div id="connection-help" class="help" hidden>
+      <p>
+        Turn on <strong>Browser extension</strong> in bb's Computer Use settings and install the bridge there, then
+        reconnect.
+      </p>
+      <p id="error" class="error"></p>
+      <button id="reconnect" type="button">Reconnect</button>
+    </div>
+    <div id="paused" class="paused" hidden>
+      <p>Agents are paused because the debugging bar was cancelled.</p>
+      <button id="resume" type="button">Resume agents</button>
+    </div>
+    <section>
+      <p class="help">Agents work in tabs in the purple <strong>Agent</strong> group, and in tabs they open themselves.</p>
+      <button id="share" type="button" hidden></button>
+      <label class="toggle"><input id="scope-all" type="checkbox" /> Let agents use any tab</label>
+    </section>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

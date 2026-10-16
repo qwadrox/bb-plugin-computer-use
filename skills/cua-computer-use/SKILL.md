@@ -23,7 +23,7 @@ names here carry the `cua_` prefix.
   tool). They can turn it on in Settings → Plugins → Computer Use → Agent tools.
 - The user may have asked to approve sensitive calls (clipboard text,
   whole-screen capture, file uploads and downloads, attaching to a signed-in
-  browser). Such a call waits for their answer in the thread; if it is not
+  browser, the first `browser_*` call in a thread). Such a call waits for their answer in the thread; if it is not
   allowed, continue without it.
 - Sessions are managed for you. Do not call `start_session` or `end_session`,
   and never run `cua-driver stop`.
@@ -74,6 +74,31 @@ names here carry the `cua_` prefix.
   the user accepts visible control.
 - Stale token or ambiguous window: list windows or read again, then act on
   the intended live target.
+
+## Browser tabs through the extension (`browser_*`)
+
+If you have `browser_*` tools, the user installed the optional Agent Browser
+Bridge extension. Prefer them for web pages in the user's own browser: they
+work in background tabs while the user keeps using the browser, and need no
+window, pid or foreground attach.
+
+- `browser_tabs` lists the tabs the user shares (the **Agent** tab group, or
+  every tab if they allowed it); `browser_open {url}` opens a background tab
+  in that group. Other tabs are off limits: if the page you need is not
+  shared, ask the user to share it (drag it into the Agent group or use the
+  extension's toolbar button) instead of reaching it another way.
+- `browser_read {tab_id}` returns a text outline with `[eN]` refs; pass
+  `query` to keep matching lines only, and the offset it names for more.
+  `browser_click`, `browser_type`, `browser_select`, `browser_key` and
+  `browser_scroll` take those refs. Refs expire when the page changes
+  (`stale_ref`): read again.
+- `browser_screenshot` may answer `not_rendered` for a background tab; read
+  the page instead of bringing the tab to the front.
+- `paused` means the user closed the browser's debugging bar: stop and tell
+  them; they resume from the extension. `not_connected` or `not_installed`
+  means setup: give the user the settings link, do not fall back to `cua_*`
+  browser tools unless they say so.
+- Close tabs you opened with `browser_close` when you no longer need them.
 
 ## Browser windows
 

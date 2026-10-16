@@ -76,8 +76,56 @@ describe("settings sections", () => {
       { id: "provider-overrides", title: "Provider overrides" },
       { id: "agent-tools", title: "Agent tools" },
       { id: "driver-machines", title: "Cua Driver on your machines" },
+      { id: "browser-extension", title: "Browser extension" },
       { id: "about", title: "About Computer Use" },
     ]);
+  });
+
+  it("keeps the browser extension off and its setup hidden until turned on", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const section = app.settingsSections.find((candidate) => candidate.id === "browser-extension")!;
+    const view = {
+      enabled: false,
+      extensionId: "apeidchlabamkkpmahikoiingkhdcagf",
+      extensionDir: "/src/plugin/browser-extension/dist",
+      hosts: [
+        {
+          id: "host_1",
+          name: "laptop",
+          bridge: {
+            supported: true,
+            installed: false,
+            browsers: [{ id: "brave", name: "Brave", detected: true, registered: false }],
+            connections: [],
+          },
+          error: null,
+        },
+      ],
+    };
+    const calls: unknown[] = [];
+    const slot = renderSlot(section, {}, {
+      rpc: {
+        browserState: () => view,
+        setBrowserExtension: (raw: unknown) => {
+          calls.push(raw);
+          return { ...view, enabled: (raw as { enabled: boolean }).enabled };
+        },
+        browserSetup: (raw: unknown) => {
+          calls.push(raw);
+          return { ...view, enabled: true };
+        },
+      },
+    });
+
+    const toggle = await slot.findByRole("checkbox", { name: /Offer browser_\* tools/ });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    expect(slot.queryByText("Install bridge")).toBeNull();
+    fireEvent.click(toggle);
+    fireEvent.click(await slot.findByRole("button", { name: "Install bridge" }));
+    await waitFor(() => expect(calls).toEqual([{ enabled: true }, { hostId: "host_1", action: "install" }]));
+    expect(slot.getByText("/src/plugin/browser-extension/dist")).toBeTruthy();
+    expect(slot.getByText(/Brave: not set up/)).toBeTruthy();
+    slot.lifecycle.unmount();
   });
 
   it("keeps routing modes to one line and moves each detail into a hover hint", async () => {

@@ -26,6 +26,9 @@ type InstallState = Host["install"];
 type ToolView = State["tools"][number];
 type Exposure = ToolView["exposure"];
 type InstallTarget = "tested" | "latest";
+type BrowserView = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R
+  ? Extract<R, { extensionId: unknown }>
+  : never;
 
 const CUA_DOCS_URL = "https://cua.ai/docs";
 const CUA_INSTALL_URL = "https://cua.ai/docs/how-to-guides/driver/install";
@@ -926,17 +929,175 @@ export function AgentToolsSettings() {
   );
 }
 
+function useBrowserView() {
+  const rpc = useRpc<typeof rpcContract>();
+  const [view, setView] = useState<BrowserView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setView(await rpc.call("browserState"));
+      setError(null);
+    } catch (loadError) {
+      setError(errorMessage(loadError));
+    }
+  }, [rpc]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useRealtime("state-changed", () => {
+    void load();
+  });
+
+  async function run(label: string, operation: () => Promise<BrowserView>): Promise<void> {
+    setBusy(label);
+    try {
+      setView(await operation());
+    } catch (runError) {
+      toast.error(errorMessage(runError));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return { rpc, view, error, busy, run, load };
+}
+
+function CopyPath({ value }: { value: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <code className="min-w-0 flex-1 break-all text-foreground">{value}</code>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          void navigator.clipboard.writeText(value).then(
+            () => toast.success("Copied"),
+            () => toast.error("Could not copy"),
+          )
+        }
+      >
+        Copy
+      </Button>
+    </span>
+  );
+}
+
+/** The optional Agent Browser Bridge: off until the user turns it on here. */
+export function BrowserExtensionSettings() {
+  const { rpc, view, error, busy, run, load } = useBrowserView();
+  if (view === null) return <SectionState error={error} />;
+
+  const connected = view.hosts.flatMap((host) => host.bridge?.connections ?? []);
+  const linkClass = "rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80";
+
+  return (
+    <div className="space-y-3">
+      <label className="group/row flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 hover:bg-state-hover">
+        <input
+          type="checkbox"
+          checked={view.enabled}
+          disabled={busy !== null}
+          onChange={(event) => {
+            const enabled = event.target.checked;
+            void run("toggle", () => rpc.call("setBrowserExtension", { enabled }));
+          }}
+        />
+        <span className="text-sm font-medium">Offer browser_* tools</span>
+        <Hint label="browser tools">
+          Agents work in the tabs you share in your everyday browser (the Agent tab group), in the background, while you use other tabs. The browser shows a debugging bar while an agent is attached. Optional: nothing changes until you turn it on.
+        </Hint>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {connected.length > 0 ? `Connected: ${connected.map((entry) => entry.browser).join(", ")}` : "No browser connected"}
+        </span>
+      </label>
+
+      {view.enabled ? (
+        <div className="space-y-3 px-3 text-xs leading-relaxed text-muted-foreground" data-browser-setup>
+          {view.hosts.length === 0 ? <p>No machine is online.</p> : null}
+          {view.hosts.map((host) => {
+            const bridge = host.bridge;
+            const detected = bridge?.browsers.filter((entry) => entry.detected) ?? [];
+            return (
+              <div key={host.id} className="space-y-2 rounded-lg border border-border/70 bg-background p-3" data-browser-host={host.id}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">{host.name}</span>
+                  {bridge === null ? null : !bridge.supported ? (
+                    <span>Not supported on this system</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant={bridge.installed ? "outline" : "default"}
+                      disabled={busy !== null}
+                      onClick={() =>
+                        void run(`bridge:${host.id}`, () =>
+                          rpc.call("browserSetup", { hostId: host.id, action: bridge.installed ? "uninstall" : "install" }),
+                        )
+                      }
+                    >
+                      {busy === `bridge:${host.id}` ? "Working…" : bridge.installed ? "Remove bridge" : "Install bridge"}
+                    </Button>
+                  )}
+                </div>
+                {host.error !== null ? <p className="text-destructive">{host.error}</p> : null}
+                {bridge !== null && bridge.supported ? (
+                  <p>
+                    {detected.length === 0
+                      ? "No Chromium browser found (Brave, Chrome, Edge, Chromium)."
+                      : detected.map((entry) => `${entry.name}: ${entry.registered ? "ready" : "not set up"}`).join(" · ")}
+                    {bridge.connections.length > 0
+                      ? ` · connected: ${bridge.connections.map((entry) => `${entry.browser} (extension ${entry.extension})`).join(", ")}`
+                      : ""}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>Install the bridge above. It lets the extension talk to bb on this machine; Remove bridge undoes it.</li>
+            <li>
+              Open <code className="text-foreground">brave://extensions</code> or <code className="text-foreground">chrome://extensions</code>, turn on Developer mode, choose Load unpacked, and pick
+              {view.extensionDir === null ? (
+                <> the <code className="text-foreground">browser-extension/dist</code> folder of this plugin (build it with <code className="text-foreground">npm run build:extension</code>).</>
+              ) : (
+                <> this folder (build it first with <code className="text-foreground">npm run build:extension</code>):<CopyPath value={view.extensionDir} /></>
+              )}
+            </li>
+            <li>
+              Share tabs: put them in a tab group named <strong className="font-medium text-foreground">Agent</strong>, or use the extension's toolbar button. Tabs agents open join that group. Close the debugging bar to pause agents.
+            </li>
+          </ol>
+          <p>
+            Extension id <code className="text-foreground">{view.extensionId}</code>. Agent Browser Bridge ships with this plugin and is not affiliated with bb or Cua AI.{" "}
+            <button type="button" className={linkClass} onClick={() => void load()}>
+              Check again
+            </button>
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 interface ApprovalRequest {
   tool: string;
+  shownName: string;
   reason: string;
   arguments: string;
 }
 
 function readApproval(payload: unknown): ApprovalRequest | null {
   if (typeof payload !== "object" || payload === null) return null;
-  const { tool, reason, arguments: args } = payload as Record<string, unknown>;
+  const { tool, shownName, reason, arguments: args } = payload as Record<string, unknown>;
   if (typeof tool !== "string" || typeof reason !== "string") return null;
-  return { tool, reason, arguments: typeof args === "string" ? args : "{}" };
+  return {
+    tool,
+    shownName: typeof shownName === "string" ? shownName : `cua_${tool}`,
+    reason,
+    arguments: typeof args === "string" ? args : "{}",
+  };
 }
 
 /** Asks the user to allow one sensitive driver call (Ask before sensitive actions). */
@@ -959,7 +1120,7 @@ export function ApproveToolCard({ interaction, submit, cancel }: PluginPendingIn
           "The agent wants to use a sensitive Cua Driver tool."
         ) : (
           <>
-            The agent wants to {request.reason} with <code className="text-foreground">cua_{request.tool}</code>.
+            The agent wants to {request.reason} with <code className="text-foreground">{request.shownName}</code>.
           </>
         )}
       </p>
@@ -1023,6 +1184,12 @@ export default definePluginApp((app) => {
     title: "Cua Driver on your machines",
     description: "Manage Cua Driver on the machines running your threads.",
     component: DriverMachinesSettings,
+  });
+  app.slots.settingsSection({
+    id: "browser-extension",
+    title: "Browser extension",
+    description: "Optional. Lets agents work in tabs you share in your own browser, in the background.",
+    component: BrowserExtensionSettings,
   });
   app.slots.settingsSection({
     id: "about",

@@ -84,6 +84,8 @@ async function load(options: {
   toolResults?: ToolCallResult[];
   tools?: CatalogTool[];
   driverVersion?: string | null;
+  /** What the browser extension answers, in order; defaults to echoing the call. */
+  browserReplies?: unknown[];
 } = {}) {
   const hostCalls: Array<{ method: string; input: unknown; hostId: string }> = [];
   const { bb, harness } = createFakePluginHost({
@@ -104,6 +106,7 @@ async function load(options: {
       plugins: {
         updateSettings: async () => ({}),
         getSettings: async () => ({ ok: true, schema: {}, values: options.storedSettings ?? {} }),
+        getSource: async () => ({ requested: "path:/src/plugin", resolved: "path:/src/plugin", engines: {}, history: [] }),
       },
     },
     experimental_callHostRpc: async ({ method, input, hostId }) => {
@@ -122,6 +125,15 @@ async function load(options: {
         return { running: method === "install", ok: null, exitCode: null, step: "starting", tail: [], startedAt: null, finishedAt: null };
       }
       if (method === "grantPermissions") return { ok: true, output: "Requested." };
+      if (method === "browserBridge") {
+        return {
+          supported: true,
+          installed: (input as { action: string }).action !== "uninstall",
+          browsers: [{ id: "brave", name: "Brave", detected: true, registered: true }],
+          connections: [{ browser: "Brave", version: "141.0", extension: "0.1.0", pid: 42 }],
+        };
+      }
+      if (method === "browserCall") return options.browserReplies?.shift() ?? { ok: true, browser: "Brave", result: { echoed: input } };
       return { disconnected: false };
     },
   });
@@ -133,6 +145,12 @@ async function load(options: {
     grants: string[];
   });
   return { bb, harness, hostCalls, toolCalls };
+}
+
+/** Waits until the plugin asks, and returns that request. */
+async function asked(harness: Awaited<ReturnType<typeof load>>["harness"]) {
+  await vi.waitFor(() => expect(harness.inspection.pendingInteractions).toHaveLength(1));
+  return harness.inspection.pendingInteractions[0]!;
 }
 
 /** Waits for the startup status probe and the catalog read it triggers. */
@@ -426,12 +444,6 @@ describe("driver calls", () => {
 });
 
 describe("asking before sensitive actions", () => {
-  /** Waits until the plugin asks, and returns that request. */
-  async function asked(harness: Awaited<ReturnType<typeof load>>["harness"]) {
-    await vi.waitFor(() => expect(harness.inspection.pendingInteractions).toHaveLength(1));
-    return harness.inspection.pendingInteractions[0]!;
-  }
-
   it("runs sensitive tools without asking while the setting is off", async () => {
     const { harness, toolCalls } = await load();
     expect(structured(await harness.behavior.callAgentTool("cua_clipboard_read", { include_text: true })).isError).toBe(false);
@@ -668,5 +680,94 @@ describe("install and update", () => {
 
     const grant = (await harness.behavior.callRpc("grantPermissions", { hostId: "host_9" })) as { ok: boolean };
     expect(grant.ok).toBe(true);
+  });
+});
+
+describe("browser extension", () => {
+  const browserCalls = (hostCalls: Array<{ method: string; input: unknown }>) =>
+    hostCalls.filter((call) => call.method === "browserCall").map((call) => call.input);
+
+  it("stays off until the user turns it on", async () => {
+    const { harness, hostCalls } = await load();
+    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(names(configuration)).not.toContain("browser_tabs");
+    expect(configuration.instructions).not.toMatch(/browser_\*/);
+    const refused = structured(await harness.behavior.callAgentTool("browser_tabs", {}));
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/browser extension is turned off/);
+    expect(browserCalls(hostCalls)).toHaveLength(0);
+    expect(harness.registrations.settingsDescriptors).not.toHaveProperty("browserExtension");
+  });
+
+  it("offers browser_* tools once turned on and relays calls to the thread's machine", async () => {
+    const { harness, hostCalls } = await load({
+      browserReplies: [{ ok: true, browser: "Brave", result: { text: "# Inbox\n[e1] button \"Compose\"", total: 9000, nextOffset: 15000, refs: 1 } }],
+    });
+    expect((await harness.behavior.runCli(["browser", "on"])).stdout).toMatch(/on/);
+    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(names(configuration)).toEqual(expect.arrayContaining(["browser_tabs", "browser_read", "browser_click", "cua_call"]));
+    expect(names(configuration).length).toBeLessThanOrEqual(256);
+    expect(configuration.instructions).toMatch(/prefer the browser_\* tools/);
+
+    const read = structured(await harness.behavior.callAgentTool("browser_read", { tab_id: 7, browser: "Brave" }));
+    expect(text(read)).toBe('# Inbox\n[e1] button "Compose"\n\n(More: call browser_read with offset 15000.)');
+    const clicked = structured(await harness.behavior.callAgentTool("browser_click", { tab_id: 7, ref: "e1" }));
+    expect(JSON.parse(text(clicked))).toMatchObject({ echoed: { method: "click", params: { tab_id: 7, ref: "e1" } } });
+    expect(browserCalls(hostCalls)[0]).toEqual({ method: "read", params: { tab_id: 7 }, browser: "Brave" });
+    expect(hostCalls.filter((call) => call.method === "browserCall").every((call) => call.hostId === "host_9")).toBe(true);
+  });
+
+  it("sends the user to settings when the extension is not set up, and passes refusals through", async () => {
+    const { harness } = await load({
+      browserReplies: [
+        { ok: false, code: "not_connected", message: "No browser with the Agent Browser Bridge extension is connected." },
+        { ok: false, code: "tab_not_shared", message: "Tab 3 is not shared with agents." },
+      ],
+    });
+    await harness.behavior.runCli(["browser", "on"]);
+    const setup = structured(await harness.behavior.callAgentTool("browser_tabs", {}));
+    expect(setup.isError).toBe(true);
+    expect(text(setup)).toMatch(/needs setup by the user.*\/settings\/plugins\/computer-use/s);
+    const refused = structured(await harness.behavior.callAgentTool("browser_read", { tab_id: 3 }));
+    expect(text(refused)).toBe("browser_read failed (tab_not_shared): Tab 3 is not shared with agents.");
+  });
+
+  it("returns screenshots as images", async () => {
+    const { harness } = await load({ browserReplies: [{ ok: true, browser: "Brave", result: { data: "QUJD", mime_type: "image/jpeg" } }] });
+    await harness.behavior.runCli(["browser", "on"]);
+    const shot = (await harness.behavior.callAgentTool("browser_screenshot", { tab_id: 1 })) as unknown as {
+      content: Array<{ type: string; mimeType?: string }>;
+    };
+    expect(JSON.stringify(shot)).toMatch(/image\/jpeg/);
+  });
+
+  it("asks once per thread before the first browser call while asking is on", async () => {
+    const { harness, hostCalls } = await load({ settings: { confirmSensitiveTools: true } });
+    await harness.behavior.runCli(["browser", "on"]);
+    const pending = harness.behavior.callAgentTool("browser_open", { url: "https://example.com" }, { threadId: "thr_1" });
+    const request = await asked(harness);
+    expect(request).toMatchObject({ title: "Allow browser_open?" });
+    expect(request.payload).toMatchObject({ tool: "browser_open", shownName: "browser_open", reason: expect.stringMatching(/Agent Browser Bridge/) });
+    harness.behavior.submitInteraction(request.id, { allow: "thread" });
+    expect(structured(await pending).isError).toBe(false);
+    expect(structured(await harness.behavior.callAgentTool("browser_tabs", {}, { threadId: "thr_1" })).isError).toBe(false);
+    expect(harness.inspection.pendingInteractions).toHaveLength(0);
+    expect(browserCalls(hostCalls)).toHaveLength(2);
+  });
+
+  it("shows and changes the bridge from the app", async () => {
+    const { harness, hostCalls } = await load();
+    const view = (await harness.behavior.callRpc("browserState", null)) as {
+      enabled: boolean;
+      extensionDir: string | null;
+      hosts: Array<{ id: string; bridge: { installed: boolean } | null }>;
+    };
+    expect(view).toMatchObject({ enabled: false, extensionDir: "/src/plugin/browser-extension/dist", hosts: [{ id: "host_9" }] });
+    const removed = (await harness.behavior.callRpc("browserSetup", { hostId: "host_9", action: "uninstall" })) as typeof view;
+    expect(hostCalls.some((call) => call.method === "browserBridge" && (call.input as { action: string }).action === "uninstall")).toBe(true);
+    expect(removed.hosts[0]?.bridge).toBeDefined();
+    const on = (await harness.behavior.callRpc("setBrowserExtension", { enabled: true })) as typeof view;
+    expect(on.enabled).toBe(true);
+    expect((await harness.behavior.runCli(["browser", "status"])).stdout).toMatch(/Browser extension tools: on[\s\S]*Brave: registered[\s\S]*Connected: Brave 141\.0/);
   });
 });

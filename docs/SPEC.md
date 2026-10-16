@@ -73,6 +73,7 @@ Plugin storage (`bb.storage.kv`):
 | `driver-status:<hostId>` | last `DriverStatus` probe for that machine |
 | `catalog:<hostId>` | that machine's driver catalog and version |
 | `tool-exposure` | `Record<tool, "tool" \| "call" \| "off">` user overrides |
+| `browser-extension` | `true` when the user turned the optional browser extension's `browser_*` tools on; absent means off. Set by the Browser extension card and `bb cua browser on\|off`. |
 
 Provider ids are dynamic (plugins add providers), so overrides live in kv and
 the UI lists whatever `bb.sdk.providers.list()` returns.
@@ -91,6 +92,8 @@ decision(provider) =
 instructions }` for `cua`, and `{ tools: [], skills: [] }` otherwise. The
 selection is the meta tools plus every driver tool whose exposure is `tool`;
 group toggles turn browser or clipboard tools off, `cua_call` included.
+With the browser extension on, the `browser_*` tools join the selection and
+the dedicated driver tools give up as many slots.
 
 ## 6. Tool surface
 
@@ -102,6 +105,16 @@ only forwards it to tools whose live schema declares `session`.
 Result mapping: MCP `text` → text, `image` → image (base64 + mime), other →
 JSON text, `structuredContent` → `structuredContent:\n<json>` text capped at
 200 KB, empty → `(empty result)`. MCP `isError` maps to bb `isError`.
+
+Browser extension tools (`browser_*`, optional) are not driver tools. Each
+maps to one method of the Agent Browser Bridge extension and runs through the
+host method `browserCall`: the host worker finds the browsers connected to
+its bridge (one Unix socket per browser, `<pid>.sock`, mode 0600), asks the
+one named by `browser` or the only one, and returns `{ok, browser, result}` or
+`{ok: false, code, message}`. `read` becomes text with a next-offset hint,
+`screenshot` an image, everything else compact JSON. Setup codes
+(`not_installed`, `not_connected`, `unsupported`) point the agent to the
+settings page.
 
 ## 7. Host execution
 

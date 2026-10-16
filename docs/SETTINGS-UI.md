@@ -3,7 +3,7 @@
 Where: **Settings → Plugins → Computer Use**.
 
 bb renders the declarative configuration form first. The plugin then registers
-five sibling settings cards so each concern has its own boundary instead of
+six sibling settings cards so each concern has its own boundary instead of
 appearing as a nested card inside one large group:
 
 1. **Routing mode** keeps the three routing choices visible because this is the
@@ -17,7 +17,13 @@ appearing as a nested card inside one large group:
    setup checklist, including whether its driver is the tested version and
    what drifted. Machines needing attention open automatically; manual setup
    and troubleshooting commands stay collapsed beneath the list.
-5. **About Computer Use** credits Cua AI and links to the official Cua Driver
+5. **Browser extension** is the optional Agent Browser Bridge. A checkbox
+   (off by default) offers the `browser_*` tools; only when it is on does the
+   card show each machine's bridge (Install bridge / Remove bridge, which
+   browsers are set up and connected), the Load unpacked steps with the
+   extension folder and a Copy button, and the extension id. Like the routing
+   mode, the checkbox lives in plugin storage so it appears once.
+6. **About Computer Use** credits Cua AI and links to the official Cua Driver
    documentation and source repository.
 
 Rows stay on one line. Where a routing mode or checklist item has extra detail,
@@ -90,5 +96,7 @@ bb cua policy [<providerId> <cua|native|off|inherit>] [--json]
 bb cua tools [--host <id>]
 bb cua call <tool> [<json-args>] [--host <id>]
 bb cua expose run_script call
+bb cua browser [status|install|uninstall|on|off] [--host <id>] [--json]
+bb cua browser call browser_tabs '{}'
 bb plugin config computer-use set browserTools false
 ```

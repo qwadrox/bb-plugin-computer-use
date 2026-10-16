@@ -95,6 +95,27 @@ export type DriverGrant = (typeof DRIVER_GRANTS)[number];
 /** An exact stable Cua Driver version such as 0.36.0. */
 export const driverVersionSchema = z.string().regex(/^\d+\.\d+\.\d+$/, "expected an x.y.z version");
 
+/** The Agent Browser Bridge on one machine: native host files and the browsers connected to it. */
+export const browserBridgeStateSchema = z
+  .object({
+    supported: z.boolean(),
+    installed: z.boolean(),
+    browsers: z.array(
+      z.object({ id: z.string(), name: z.string(), detected: z.boolean(), registered: z.boolean() }).strict(),
+    ),
+    connections: z.array(
+      z.object({ browser: z.string(), version: z.string(), extension: z.string(), pid: z.number() }).strict(),
+    ),
+  })
+  .strict();
+export type BrowserBridgeState = z.infer<typeof browserBridgeStateSchema>;
+
+export const browserCallResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), browser: z.string(), result: z.unknown() }).strict(),
+  z.object({ ok: z.literal(false), code: z.string(), message: z.string() }).strict(),
+]);
+export type BrowserCallResult = z.infer<typeof browserCallResultSchema>;
+
 export const hostContract = defineRpcContract({
   install: {
     input: z.object({ version: driverVersionSchema.nullable() }).strict(),
@@ -136,6 +157,20 @@ export const hostContract = defineRpcContract({
   disconnect: {
     input: z.null(),
     output: z.object({ disconnected: z.boolean() }).strict(),
+  },
+  browserBridge: {
+    input: z.object({ action: z.enum(["status", "install", "uninstall"]) }).strict(),
+    output: browserBridgeStateSchema,
+  },
+  browserCall: {
+    input: z
+      .object({
+        method: z.string().min(1),
+        params: z.record(z.string(), z.unknown()),
+        browser: z.string().min(1).optional(),
+      })
+      .strict(),
+    output: browserCallResultSchema,
   },
 });
 

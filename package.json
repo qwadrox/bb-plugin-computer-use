@@ -61,11 +61,16 @@
   ],
   "scripts": {
     "build": "bb plugin build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspace browser-extension",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build",
+    "check": "npm run typecheck && npm run test && npm run build && npm run build:extension",
     "sync:tools": "node scripts/sync-driver-tools.mjs",
     "test:network": "CUA_NETWORK=1 vitest run src/installer.test.ts",
-    "test:live": "CUA_LIVE=1 vitest run live.test.ts"
-  }
+    "test:live": "CUA_LIVE=1 vitest run live.test.ts",
+    "build:extension": "npm run build --workspace browser-extension",
+    "test:browser": "CUA_BROWSER_E2E=1 vitest run browser.e2e.test.ts"
+  },
+  "workspaces": [
+    "browser-extension"
+  ]
 }

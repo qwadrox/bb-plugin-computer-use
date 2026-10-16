@@ -116,6 +116,8 @@ function deps(overrides: Partial<Parameters<typeof createCuaHostEntry>[0]> & { i
       platform: "darwin",
       env: { PATH: "/usr/bin", HOME: "/Users/test" },
       homeDir: "/Users/test",
+      runtimePath: "/usr/local/bin/node",
+      uid: 501,
       now: () => 1_000,
       sleep: async () => undefined,
       fileExists: async (path) => installedRef.current && path === "/Users/test/.local/bin/cua-driver",

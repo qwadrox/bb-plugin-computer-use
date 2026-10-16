@@ -23,7 +23,8 @@ Inc. or the bb team. See [NOTICE.md](NOTICE.md) for attribution.
 | Pinned installs | Install and update target the tested driver by default. The plugin downloads that release's installer files from GitHub and runs them only if each matches a checksum recorded in this repo. The newest release is a separate, explicitly untested choice. |
 | Agent skill | `cua-computer-use`: the upstream Cua Driver 0.36 loop (narrow reads, `run_steps` with `observe`, verify at checkpoints) plus bb rules: what to do when a tool is off, and when to stop and ask before sending or deleting. |
 | Settings UI | Routing mode, per-provider overrides, an **Agent tools** card with per-tool exposure, and a setup checklist per machine with install, permission and drift state. |
-| CLI | `bb cua status`, `drift`, `tools`, `expose`, `call`, `policy`, `mode`, `install`, `update`, `grant`. |
+| Browser extension (optional) | **Agent Browser Bridge**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs you share in your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
+| CLI | `bb cua status`, `drift`, `tools`, `expose`, `call`, `policy`, `mode`, `install`, `update`, `grant`, `browser`. |
 | Multi-machine | Tool calls run on the host that owns the thread's environment through bb's host RPC, so remote enrolled machines work the same as the local one. |
 
 ## Requirements
@@ -117,6 +118,44 @@ now. The plugin never removes a grant itself, since someone else may have
 started the service that way. On Linux and Windows, start
 `cua-driver serve --grant existing-profile` yourself.
 
+## Browser extension (optional)
+
+Cua Driver drives a browser through its window, or attaches to a signed-in
+profile with remote debugging, which it automates only for Chrome, Chromium
+and Edge. The optional **Agent Browser Bridge** extension
+([browser-extension/](browser-extension/)) works in any Chromium browser,
+Brave included, the way browser agents usually do: the extension uses the
+browser's debugger API on the tabs you share, so agents click and type in
+background tabs while you use other tabs. The browser shows its "started
+debugging this browser" bar while an agent is attached; closing that bar
+pauses agents until you resume them from the extension.
+
+Nothing changes until you turn it on:
+
+1. **Settings → Plugins → Computer Use → Browser extension**: tick **Offer
+   browser_\* tools**, then **Install bridge** on the machine. The bridge is a
+   small native messaging host (`~/Library/Application Support/agent-browser-bridge`
+   on macOS, `~/.local/share/agent-browser-bridge` on Linux) plus one manifest
+   in each Chromium browser's `NativeMessagingHosts` folder, so the extension
+   can talk to bb. **Remove bridge** deletes them. CLI: `bb cua browser on`,
+   `bb cua browser install`.
+2. Load the extension: `npm run build:extension`, open `brave://extensions`
+   (or `chrome://extensions`), turn on Developer mode, **Load unpacked**, and
+   pick `browser-extension/dist`. The card shows the full path. A Chrome Web
+   Store listing may follow.
+3. Share tabs: put them in a tab group named **Agent**, or use the extension's
+   toolbar button (**Share this tab**). Tabs agents open with `browser_open`
+   join that group. The toolbar popup can also let agents use any tab.
+
+Tools: `browser_tabs`, `browser_open`, `browser_read` (a text outline with
+`[eN]` refs), `browser_click`, `browser_type`, `browser_select`,
+`browser_key`, `browser_scroll`, `browser_navigate`, `browser_screenshot`,
+`browser_close`. They obey routing like the `cua_*` tools, and with **Ask
+before sensitive actions** on, the first one in a thread asks you. Agents
+cannot reach tabs you did not share, `chrome://` pages, or other extensions.
+The bridge accepts connections only from this user (socket mode 0600) and
+only from the extension's id.
+
 ## Configure
 
 Open **Settings → Plugins → Computer Use**, or use the CLI.
@@ -181,6 +220,7 @@ do on the machine, Cua Driver's own permission mode decides.
 | Browser tools | on | Off turns every browser tool off, `cua_call` included. |
 | Clipboard tools | on | Off turns `clipboard_read` / `clipboard_write` off, `cua_call` included. |
 | Signed-in browser profiles | off | Lets browser tools attach to a signed-in Chrome, Edge or Brave window (see above). |
+| Browser extension | off | Offers the `browser_*` tools of the optional extension (see [Browser extension](#browser-extension-optional)). Set in its own card or with `bb cua browser on\|off`. |
 | Ask before sensitive actions | off | Asks in the thread before a sensitive call runs (see [Permissions and safety](#permissions-and-safety)). Off runs them without asking. |
 | Session label prefix | `bb` | Each active thread run gets a unique label beginning with `<prefix>-<threadId>`; the label shows in the agent cursor badge. |
 
@@ -285,6 +325,7 @@ npm install            # add --ignore-scripts if better-sqlite3 fails to build, 
 npm run check          # typecheck, tests, build
 npm run test:network   # recorded installer checksums against what GitHub serves
 npm run test:live      # drives Calculator and reads this Mac's driver (needs Cua Driver)
+npm run build:extension && npm run test:browser   # the extension end to end in a throwaway headless Chromium
 bb plugin install .    # then `bb plugin dev` for the rebuild-on-save loop
 ```
 
@@ -302,6 +343,10 @@ src/snapshot.ts          the tested driver's catalog (driver-snapshot.json)
 src/installer.ts         installer files and recorded checksums (driver-installer.json)
 src/policy.ts            routing decision logic
 src/contract.ts          server ⇄ host RPC contract
+src/browser-tools.ts     browser_* agent tools of the optional extension
+src/browser-host.ts      extension bridge on the machine: install, sockets, calls
+src/browser-bridge-script.ts  the native messaging host the browser starts
+browser-extension/       Agent Browser Bridge (Chromium MV3 extension, npm workspace)
 src/mcp-client.ts        minimal MCP stdio JSON-RPC client
 scripts/                 sync-driver-tools.mjs
 skills/                  agent skill injected when Cua tools are active

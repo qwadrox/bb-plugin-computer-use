@@ -1,0 +1,607 @@
+import {
+  domClick,
+  focusRef,
+  locateRef,
+  readValue,
+  readyState,
+  scrollPage,
+  selectOption,
+  setValue,
+  snapshotPage,
+  type Located,
+  type SnapshotResult,
+} from "./page.js";
+import {
+  DEFAULT_SETTINGS,
+  GROUP_TITLE,
+  NATIVE_HOST,
+  type BridgeStatus,
+  type PopupRequest,
+  type StoredSettings,
+} from "./shared.js";
+
+const CDP_VERSION = "1.3";
+const CDP_TIMEOUT_MS = 10_000;
+const INPUT_TIMEOUT_MS = 4_000;
+const SCREENSHOT_TIMEOUT_MS = 6_000;
+const LOAD_TIMEOUT_MS = 20_000;
+const IDLE_DETACH_MS = 60_000;
+const RECONNECT_ALARM = "reconnect";
+const SHARED_KEY = "sharedTabs";
+
+class BridgeError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+// ---------------------------------------------------------------- settings
+
+async function readSettings(): Promise<StoredSettings> {
+  const stored = await chrome.storage.local.get(["scope", "paused"]);
+  return {
+    scope: stored.scope === "all" ? "all" : DEFAULT_SETTINGS.scope,
+    paused: stored.paused === true,
+  };
+}
+
+function browserName(): string {
+  const brands = (navigator as Navigator & { userAgentData?: { brands: Array<{ brand: string }> } }).userAgentData?.brands ?? [];
+  const names = brands.map((entry) => entry.brand);
+  if ((navigator as Navigator & { brave?: unknown }).brave !== undefined || names.includes("Brave")) return "Brave";
+  if (names.includes("Microsoft Edge")) return "Edge";
+  if (names.includes("Google Chrome")) return "Chrome";
+  return "Chromium";
+}
+
+function browserVersion(): string {
+  return /Chrome\/([\d.]+)/.exec(navigator.userAgent)?.[1] ?? "";
+}
+
+// ---------------------------------------------------------------- native host
+
+let port: chrome.runtime.Port | null = null;
+let lastError: string | null = null;
+let retryMs = 2_000;
+
+function connect(): void {
+  if (port !== null) return;
+  let next: chrome.runtime.Port;
+  try {
+    next = chrome.runtime.connectNative(NATIVE_HOST);
+  } catch (error) {
+    lastError = error instanceof Error ? error.message : String(error);
+    scheduleReconnect();
+    return;
+  }
+  port = next;
+  next.onMessage.addListener((message: unknown) => {
+    retryMs = 2_000;
+    lastError = null;
+    void handleHostMessage(message);
+  });
+  next.onDisconnect.addListener(() => {
+    lastError = chrome.runtime.lastError?.message ?? "The bridge disconnected.";
+    if (port === next) port = null;
+    scheduleReconnect();
+  });
+  next.postMessage({ type: "hello", browser: browserName(), version: browserVersion(), extension: chrome.runtime.getManifest().version });
+}
+
+function scheduleReconnect(): void {
+  setTimeout(connect, retryMs);
+  retryMs = Math.min(retryMs * 2, 60_000);
+}
+
+chrome.alarms.create(RECONNECT_ALARM, { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === RECONNECT_ALARM) connect();
+});
+chrome.runtime.onStartup.addListener(connect);
+chrome.runtime.onInstalled.addListener(connect);
+connect();
+
+interface HostRequest {
+  id: string;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+async function handleHostMessage(message: unknown): Promise<void> {
+  const request = message as Partial<HostRequest>;
+  if (typeof request.id !== "string" || typeof request.method !== "string") return;
+  try {
+    const result = await dispatch(request.method, request.params ?? {});
+    port?.postMessage({ id: request.id, result });
+  } catch (error) {
+    const code = error instanceof BridgeError ? error.code : "failed";
+    const text = error instanceof Error ? error.message : String(error);
+    port?.postMessage({ id: request.id, error: { code, message: text } });
+  }
+}
+
+// ---------------------------------------------------------------- sharing
+
+const hasGroups = typeof chrome.tabGroups !== "undefined";
+
+async function sharedTabIds(): Promise<Set<number>> {
+  const stored = await chrome.storage.session.get(SHARED_KEY);
+  return new Set(Array.isArray(stored[SHARED_KEY]) ? (stored[SHARED_KEY] as number[]) : []);
+}
+
+async function writeShared(ids: Set<number>): Promise<void> {
+  await chrome.storage.session.set({ [SHARED_KEY]: [...ids] });
+}
+
+async function agentGroupIds(): Promise<Set<number>> {
+  if (!hasGroups) return new Set();
+  const groups = await chrome.tabGroups.query({ title: GROUP_TITLE });
+  return new Set(groups.map((group) => group.id));
+}
+
+async function isShared(tab: chrome.tabs.Tab): Promise<boolean> {
+  if (tab.id === undefined) return false;
+  if (hasGroups) return tab.groupId !== -1 && (await agentGroupIds()).has(tab.groupId);
+  return (await sharedTabIds()).has(tab.id);
+}
+
+async function share(tabId: number): Promise<void> {
+  if (hasGroups) {
+    const tab = await chrome.tabs.get(tabId);
+    const [existing] = await chrome.tabGroups.query({ title: GROUP_TITLE, windowId: tab.windowId });
+    if (existing !== undefined) {
+      await chrome.tabs.group({ tabIds: [tabId], groupId: existing.id });
+    } else {
+      const groupId = await chrome.tabs.group({ tabIds: [tabId], createProperties: { windowId: tab.windowId } });
+      await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "purple" });
+    }
+    return;
+  }
+  const ids = await sharedTabIds();
+  ids.add(tabId);
+  await writeShared(ids);
+}
+
+async function unshare(tabId: number): Promise<void> {
+  if (hasGroups) {
+    const tab = await chrome.tabs.get(tabId);
+    if (await isShared(tab)) await chrome.tabs.ungroup(tabId);
+  } else {
+    const ids = await sharedTabIds();
+    ids.delete(tabId);
+    await writeShared(ids);
+  }
+  if (attached.has(tabId)) await chrome.debugger.detach({ tabId }).catch(() => undefined);
+}
+
+async function allowedTab(tabId: unknown): Promise<chrome.tabs.Tab> {
+  const settings = await readSettings();
+  if (settings.paused) {
+    throw new BridgeError(
+      "paused",
+      "The user paused agents in the browser extension. Do not work around it; ask the user to resume from the extension's toolbar button if the task needs the browser.",
+    );
+  }
+  if (typeof tabId !== "number") throw new BridgeError("invalid_arguments", "tab_id must be a number from browser_tabs or browser_open.");
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (tab === null) throw new BridgeError("tab_closed", `Tab ${tabId} is closed. browser_tabs lists the tabs you may use.`);
+  if (settings.scope !== "all" && !(await isShared(tab))) {
+    throw new BridgeError(
+      "tab_not_shared",
+      `Tab ${tabId} is not shared with agents. Open your own tab with browser_open, or ask the user to share this one (extension button → Share this tab, or drag it into the "${GROUP_TITLE}" tab group).`,
+    );
+  }
+  return tab;
+}
+
+function tabSummary(tab: chrome.tabs.Tab, shared: boolean) {
+  return { tab_id: tab.id, title: tab.title ?? "", url: tab.url ?? "", active: tab.active, window_id: tab.windowId, shared };
+}
+
+// ---------------------------------------------------------------- debugger
+
+const attached = new Map<number, number>();
+
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId === undefined) return;
+  attached.delete(source.tabId);
+  if (reason === "canceled_by_user") {
+    // The user dismissed the "started debugging this browser" bar: stop all agent work.
+    void chrome.storage.local.set({ paused: true });
+    for (const tabId of attached.keys()) void chrome.debugger.detach({ tabId }).catch(() => undefined);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  attached.delete(tabId);
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [tabId, used] of attached) {
+    if (now - used > IDLE_DETACH_MS) {
+      attached.delete(tabId);
+      void chrome.debugger.detach({ tabId }).catch(() => undefined);
+    }
+  }
+}, 15_000);
+
+function withTimeout<T>(promise: Promise<T>, ms: number, code: string, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new BridgeError(code, message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function attach(tabId: number): Promise<void> {
+  if (attached.has(tabId)) {
+    attached.set(tabId, Date.now());
+    return;
+  }
+  try {
+    await chrome.debugger.attach({ tabId }, CDP_VERSION);
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    if (/already attached/i.test(text)) {
+      throw new BridgeError("busy", "Another debugger (DevTools or another extension) is attached to this tab. Ask the user to close it.");
+    }
+    throw new BridgeError("attach_failed", `The extension cannot control this tab: ${text}`);
+  }
+  attached.set(tabId, Date.now());
+  // A background tab should behave like a focused, running one.
+  await cdp(tabId, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined);
+  await cdp(tabId, "Page.setWebLifecycleState", { state: "active" }).catch(() => undefined);
+}
+
+function cdp<T = Record<string, unknown>>(
+  tabId: number,
+  method: string,
+  params: Record<string, unknown> = {},
+  timeoutMs = CDP_TIMEOUT_MS,
+): Promise<T> {
+  attached.set(tabId, Date.now());
+  return withTimeout(
+    chrome.debugger.sendCommand({ tabId }, method, params) as Promise<T>,
+    timeoutMs,
+    "timeout",
+    `${method} did not answer within ${timeoutMs / 1000} s.`,
+  );
+}
+
+async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg?: unknown): Promise<T> {
+  await attach(tabId);
+  const tree = await cdp<{ frameTree: { frame: { id: string } } }>(tabId, "Page.getFrameTree");
+  const world = await cdp<{ executionContextId: number }>(tabId, "Page.createIsolatedWorld", {
+    frameId: tree.frameTree.frame.id,
+    worldName: "agent-browser-bridge",
+  });
+  const expression = `(${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)})`;
+  const response = await cdp<{
+    result: { value?: unknown };
+    exceptionDetails?: { text: string; exception?: { description?: string } };
+  }>(tabId, "Runtime.evaluate", {
+    expression,
+    contextId: world.executionContextId,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  if (response.exceptionDetails !== undefined) {
+    throw new BridgeError("page_error", response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
+  }
+  return response.result.value as T;
+}
+
+async function waitForLoad(tabId: number): Promise<void> {
+  const deadline = Date.now() + LOAD_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab === null) return;
+    if (tab.status === "complete") return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
+/** After an action: give the page a moment, and wait out a navigation it started. */
+async function settle(tabId: number): Promise<{ url: string; title: string }> {
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  await waitForLoad(tabId);
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  return { url: tab?.url ?? "", title: tab?.title ?? "" };
+}
+
+function staleRef(ref: string): BridgeError {
+  return new BridgeError("stale_ref", `Ref ${ref} is not on the page any more. Call browser_read again and use a fresh ref.`);
+}
+
+// ---------------------------------------------------------------- keys
+
+const KEYS: Record<string, { code: string; keyCode: number; text?: string; key?: string }> = {
+  Enter: { code: "Enter", keyCode: 13, text: "\r" },
+  Tab: { code: "Tab", keyCode: 9 },
+  Escape: { code: "Escape", keyCode: 27 },
+  Backspace: { code: "Backspace", keyCode: 8 },
+  Delete: { code: "Delete", keyCode: 46 },
+  ArrowUp: { code: "ArrowUp", keyCode: 38 },
+  ArrowDown: { code: "ArrowDown", keyCode: 40 },
+  ArrowLeft: { code: "ArrowLeft", keyCode: 37 },
+  ArrowRight: { code: "ArrowRight", keyCode: 39 },
+  Home: { code: "Home", keyCode: 36 },
+  End: { code: "End", keyCode: 35 },
+  PageUp: { code: "PageUp", keyCode: 33 },
+  PageDown: { code: "PageDown", keyCode: 34 },
+  Space: { code: "Space", keyCode: 32, text: " ", key: " " },
+};
+const MODIFIERS: Record<string, number> = { alt: 1, ctrl: 2, control: 2, meta: 4, cmd: 4, command: 4, shift: 8 };
+
+async function pressKey(tabId: number, combo: string): Promise<void> {
+  const parts = combo.split("+").map((part) => part.trim()).filter((part) => part !== "");
+  const keyName = parts.pop();
+  if (keyName === undefined) throw new BridgeError("invalid_arguments", "key is empty.");
+  let modifiers = 0;
+  for (const part of parts) {
+    const bit = MODIFIERS[part.toLowerCase()];
+    if (bit === undefined) throw new BridgeError("invalid_arguments", `Unknown modifier ${part}. Use ctrl, alt, shift or meta.`);
+    modifiers |= bit;
+  }
+  const named = KEYS[keyName] ?? KEYS[keyName[0]?.toUpperCase() + keyName.slice(1)];
+  let event: { key: string; code: string; windowsVirtualKeyCode: number; text?: string };
+  if (named !== undefined) {
+    event = { key: named.key ?? keyName, code: named.code, windowsVirtualKeyCode: named.keyCode, ...(named.text ? { text: named.text } : {}) };
+  } else if ([...keyName].length === 1) {
+    const upper = keyName.toUpperCase();
+    const isLetter = /[A-Z]/.test(upper);
+    const isDigit = /[0-9]/.test(keyName);
+    event = {
+      key: keyName,
+      code: isLetter ? `Key${upper}` : isDigit ? `Digit${keyName}` : "",
+      windowsVirtualKeyCode: isLetter || isDigit ? upper.charCodeAt(0) : 0,
+      ...(modifiers & (2 | 4) ? {} : { text: keyName }),
+    };
+  } else {
+    throw new BridgeError("invalid_arguments", `Unknown key ${keyName}. Use a single character or one of ${Object.keys(KEYS).join(", ")}.`);
+  }
+  await cdp(tabId, "Input.dispatchKeyEvent", { type: event.text ? "keyDown" : "rawKeyDown", modifiers, ...event }, INPUT_TIMEOUT_MS);
+  await cdp(tabId, "Input.dispatchKeyEvent", { type: "keyUp", modifiers, ...event }, INPUT_TIMEOUT_MS);
+}
+
+// ---------------------------------------------------------------- methods
+
+function stringParam(params: Record<string, unknown>, name: string): string {
+  const value = params[name];
+  if (typeof value !== "string" || value === "") throw new BridgeError("invalid_arguments", `${name} must be a non-empty string.`);
+  return value;
+}
+
+function webUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new BridgeError("invalid_arguments", `${raw} is not a full URL. Include https://.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:" && url.href !== "about:blank") {
+    throw new BridgeError("invalid_arguments", "Only http, https and about:blank URLs can be opened.");
+  }
+  return url.href;
+}
+
+async function dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
+  switch (method) {
+    case "status": {
+      const settings = await readSettings();
+      return { browser: browserName(), version: browserVersion(), extension: chrome.runtime.getManifest().version, ...settings };
+    }
+    case "tabs": {
+      const settings = await readSettings();
+      const tabs = await chrome.tabs.query({ windowType: "normal" });
+      const visible = [];
+      let hidden = 0;
+      for (const tab of tabs) {
+        const shared = await isShared(tab);
+        if (settings.scope === "all" || shared) visible.push(tabSummary(tab, shared));
+        else hidden += 1;
+      }
+      return { scope: settings.scope, paused: settings.paused, tabs: visible, not_shared: hidden };
+    }
+    case "open": {
+      const settings = await readSettings();
+      if (settings.paused) await allowedTab(-1);
+      const url = webUrl(typeof params.url === "string" && params.url !== "" ? params.url : "about:blank");
+      const window = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
+      const tab = await chrome.tabs.create({ url, active: false, ...(window?.id !== undefined ? { windowId: window.id } : {}) });
+      if (tab.id === undefined) throw new BridgeError("failed", "The browser did not create a tab.");
+      await share(tab.id);
+      await waitForLoad(tab.id);
+      const loaded = await chrome.tabs.get(tab.id);
+      return tabSummary(loaded, true);
+    }
+    case "read": {
+      const tab = await allowedTab(params.tab_id);
+      await waitForLoad(tab.id!);
+      const result = await evaluate<SnapshotResult>(tab.id!, snapshotPage, {
+        query: typeof params.query === "string" && params.query !== "" ? params.query : null,
+        offset: typeof params.offset === "number" ? params.offset : 0,
+        maxChars: typeof params.max_chars === "number" ? Math.min(Math.max(params.max_chars, 1_000), 60_000) : 15_000,
+      });
+      return result;
+    }
+    case "click": {
+      const tab = await allowedTab(params.tab_id);
+      const ref = stringParam(params, "ref");
+      const located = await evaluate<Located>(tab.id!, locateRef, ref);
+      if (!located.found) throw staleRef(ref);
+      let route = "trusted";
+      try {
+        const point = { x: located.x, y: located.y };
+        await cdp(tab.id!, "Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, INPUT_TIMEOUT_MS);
+        await cdp(tab.id!, "Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, INPUT_TIMEOUT_MS);
+        await cdp(tab.id!, "Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, INPUT_TIMEOUT_MS);
+      } catch (error) {
+        if (!(error instanceof BridgeError) || error.code !== "timeout") throw error;
+        route = "dom";
+        if (!(await evaluate<boolean>(tab.id!, domClick, ref))) throw staleRef(ref);
+      }
+      const after = await settle(tab.id!);
+      return { route, covered_by: located.covered, ...after };
+    }
+    case "type": {
+      const tab = await allowedTab(params.tab_id);
+      const ref = stringParam(params, "ref");
+      const text = typeof params.text === "string" ? params.text : "";
+      const replace = params.replace === true;
+      const focused = await evaluate<{ found: boolean; editable: boolean }>(tab.id!, focusRef, { ref, replace });
+      if (!focused.found) throw staleRef(ref);
+      if (!focused.editable) throw new BridgeError("not_editable", `Ref ${ref} is not a text field. Click it or pick another ref.`);
+      const before = await evaluate<{ value: string }>(tab.id!, readValue, ref);
+      let route = "trusted";
+      try {
+        if (text !== "") await cdp(tab.id!, "Input.insertText", { text }, INPUT_TIMEOUT_MS);
+        else if (replace) await pressKey(tab.id!, "Backspace");
+      } catch (error) {
+        if (!(error instanceof BridgeError) || error.code !== "timeout") throw error;
+        route = "dom";
+      }
+      let after = await evaluate<{ value: string; secret: boolean }>(tab.id!, readValue, ref);
+      if (route === "trusted" && text !== "" && after.value === before.value && !after.secret) route = "dom";
+      if (route === "dom") {
+        await evaluate<boolean>(tab.id!, setValue, { ref, text, replace });
+        after = await evaluate<{ value: string; secret: boolean }>(tab.id!, readValue, ref);
+      }
+      if (params.submit === true) await pressKey(tab.id!, "Enter");
+      const settled = params.submit === true ? await settle(tab.id!) : null;
+      return { route, value: after.secret ? "(hidden)" : after.value.slice(0, 500), ...(settled ?? {}) };
+    }
+    case "key": {
+      const tab = await allowedTab(params.tab_id);
+      await attach(tab.id!);
+      await pressKey(tab.id!, stringParam(params, "key"));
+      return settle(tab.id!);
+    }
+    case "select": {
+      const tab = await allowedTab(params.tab_id);
+      const ref = stringParam(params, "ref");
+      const result = await evaluate<{ found: boolean; chosen: string | null; options: string[] }>(tab.id!, selectOption, {
+        ref,
+        option: stringParam(params, "option"),
+      });
+      if (!result.found) throw staleRef(ref);
+      if (result.chosen === null) {
+        throw new BridgeError(
+          "no_such_option",
+          result.options.length > 0 ? `No option matches. Options: ${result.options.slice(0, 40).join(" | ")}` : `Ref ${ref} is not a <select>.`,
+        );
+      }
+      return { chosen: result.chosen, ...(await settle(tab.id!)) };
+    }
+    case "scroll": {
+      const tab = await allowedTab(params.tab_id);
+      const ref = typeof params.ref === "string" && params.ref !== "" ? params.ref : null;
+      const direction = params.direction === "up" ? -1 : 1;
+      const amount = typeof params.amount === "number" ? params.amount : 0.8;
+      const height = await evaluate<number>(tab.id!, () => innerHeight);
+      const result = await evaluate<{ found: boolean; scrollY: number }>(tab.id!, scrollPage, {
+        ref,
+        deltaY: Math.round(direction * amount * height),
+      });
+      if (!result.found && ref !== null) throw staleRef(ref);
+      return { scroll_y: result.scrollY };
+    }
+    case "navigate": {
+      const tab = await allowedTab(params.tab_id);
+      const target = stringParam(params, "url");
+      if (target === "back" || target === "forward") {
+        await (target === "back" ? chrome.tabs.goBack(tab.id!) : chrome.tabs.goForward(tab.id!)).catch(() => {
+          throw new BridgeError("no_history", `There is no page to go ${target} to.`);
+        });
+      } else if (target === "reload") {
+        await chrome.tabs.reload(tab.id!);
+      } else {
+        await chrome.tabs.update(tab.id!, { url: webUrl(target) });
+      }
+      return settle(tab.id!);
+    }
+    case "screenshot": {
+      const tab = await allowedTab(params.tab_id);
+      await attach(tab.id!);
+      try {
+        const shot = await cdp<{ data: string }>(
+          tab.id!,
+          "Page.captureScreenshot",
+          { format: "jpeg", quality: 70, captureBeyondViewport: false },
+          SCREENSHOT_TIMEOUT_MS,
+        );
+        return { data: shot.data, mime_type: "image/jpeg" };
+      } catch (error) {
+        if (error instanceof BridgeError && error.code === "timeout") {
+          throw new BridgeError(
+            "not_rendered",
+            "The browser is not drawing this tab because it is in the background, so there is no picture. Read it with browser_read instead.",
+          );
+        }
+        throw error;
+      }
+    }
+    case "close": {
+      const tab = await allowedTab(params.tab_id);
+      await chrome.tabs.remove(tab.id!);
+      return { closed: tab.id };
+    }
+    case "ready": {
+      const tab = await allowedTab(params.tab_id);
+      return evaluate<string>(tab.id!, readyState);
+    }
+    default:
+      throw new BridgeError("unknown_method", `Unknown method ${method}.`);
+  }
+}
+
+// ---------------------------------------------------------------- popup
+
+chrome.runtime.onMessage.addListener((message: PopupRequest, _sender, reply) => {
+  void (async () => {
+    switch (message.type) {
+      case "share":
+        await share(message.tabId);
+        break;
+      case "unshare":
+        await unshare(message.tabId);
+        break;
+      case "scope":
+        await chrome.storage.local.set({ scope: message.scope });
+        break;
+      case "resume":
+        await chrome.storage.local.set({ paused: false });
+        break;
+      case "reconnect":
+        retryMs = 2_000;
+        connect();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        break;
+      case "status":
+        break;
+    }
+    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const status: BridgeStatus = {
+      connected: port !== null && lastError === null,
+      error: lastError,
+      browser: browserName(),
+      settings: await readSettings(),
+      activeTab:
+        active?.id !== undefined ? { id: active.id, title: active.title ?? "", shared: await isShared(active) } : null,
+    };
+    reply(status);
+  })();
+  return true;
+});

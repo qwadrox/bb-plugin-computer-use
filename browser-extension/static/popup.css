@@ -1,0 +1,69 @@
+:root {
+  color-scheme: light dark;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+body {
+  width: 300px;
+  margin: 0;
+  padding: 12px 14px 14px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+h1 {
+  font-size: 14px;
+  margin: 0;
+}
+p {
+  margin: 8px 0;
+}
+.connection::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+.connection[data-state="ok"]::before {
+  background: #16a34a;
+}
+.help {
+  color: color-mix(in srgb, currentColor 70%, transparent);
+}
+.error {
+  font-size: 12px;
+  color: #b91c1c;
+}
+.paused {
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+}
+button {
+  font: inherit;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: transparent;
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+}
+section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}

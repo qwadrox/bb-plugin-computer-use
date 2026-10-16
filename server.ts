@@ -8,8 +8,10 @@ import {
   driverToolName,
   overridableSchema,
 } from "./src/catalog.js";
+import { BROWSER_TOOLS, BROWSER_TOOL_NAMES, browserToolResult, type BrowserTool } from "./src/browser-tools.js";
 import {
   IDLE_INSTALL_STATE,
+  browserBridgeStateSchema,
   catalogToolSchema,
   driverStatusSchema,
   hostContract,
@@ -17,6 +19,7 @@ import {
   installStateSchema,
   type CatalogTool,
   type DriverGrant,
+  type BrowserBridgeState,
   type DriverStatus,
   type InstallState,
   type ToolCallResult,
@@ -54,6 +57,8 @@ import {
 import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./src/snapshot.js";
 
 const MODE_KEY = "routing-mode";
+/** On only when the user turns the optional browser extension on in the Browser extension section. */
+const BROWSER_EXTENSION_KEY = "browser-extension";
 const OVERRIDES_KEY = "policy-overrides";
 const EXPOSURE_KEY = "tool-exposure";
 const STATUS_KEY_PREFIX = "driver-status:";
@@ -146,6 +151,28 @@ const stateSchema = z
 
 const hostInput = z.object({ hostId: z.string().min(1) }).strict();
 
+/** Must match the unpacked build's id (the manifest "key"); see src/browser-host.ts. */
+export const BROWSER_EXTENSION_ID = "apeidchlabamkkpmahikoiingkhdcagf";
+
+const browserViewSchema = z
+  .object({
+    enabled: z.boolean(),
+    extensionId: z.string(),
+    /** The unpacked extension folder when the plugin runs from a local checkout. */
+    extensionDir: z.string().nullable(),
+    hosts: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          bridge: browserBridgeStateSchema.nullable(),
+          error: z.string().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 export const rpcContract = defineRpcContract({
   getState: { input: z.null(), output: stateSchema },
   setMode: { input: z.object({ mode: z.enum(ROUTING_MODES) }).strict(), output: stateSchema },
@@ -165,11 +192,18 @@ export const rpcContract = defineRpcContract({
   },
   installState: { input: hostInput, output: installStateSchema },
   grantPermissions: { input: hostInput, output: z.object({ ok: z.boolean(), output: z.string() }).strict() },
+  browserState: { input: z.null(), output: browserViewSchema },
+  setBrowserExtension: { input: z.object({ enabled: z.boolean() }).strict(), output: browserViewSchema },
+  browserSetup: {
+    input: z.object({ hostId: z.string().min(1), action: z.enum(["install", "uninstall"]) }).strict(),
+    output: browserViewSchema,
+  },
 });
 
 type State = z.infer<typeof stateSchema>;
 type ToolView = z.infer<typeof toolViewSchema>;
 type DriftView = z.infer<typeof driftViewSchema>;
+type BrowserView = z.infer<typeof browserViewSchema>;
 
 interface SettingsSnapshot {
   browserTools: boolean;
@@ -350,7 +384,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Ask before sensitive actions",
       description:
-        "Ask in the thread before an agent reads clipboard text, writes the clipboard, captures the whole screen, uploads or downloads files, attaches to a signed-in browser, or uses a tool that runs code, force-quits apps, records the screen, or changes the driver. Off runs them without asking.",
+        "Ask in the thread before an agent reads clipboard text, writes the clipboard, captures the whole screen, uploads or downloads files, attaches to a signed-in browser, first uses the browser extension in a thread, or uses a tool that runs code, force-quits apps, records the screen, or changes the driver. Off runs them without asking.",
       default: false,
     },
     sessionPrefix: {
@@ -406,6 +440,7 @@ export default async function plugin(bb: BbPluginApi) {
   let routingMode: RoutingMode = readMode(await bb.storage.kv.get<unknown>(MODE_KEY)) ?? (await legacyMode()) ?? DEFAULT_POLICY.mode;
   let overrides = normalizePolicy({ mode: routingMode, overrides: await bb.storage.kv.get<unknown>(OVERRIDES_KEY) }).overrides;
   let exposureOverrides = normalizeOverrides(await bb.storage.kv.get<unknown>(EXPOSURE_KEY));
+  let browserExtension = (await bb.storage.kv.get<unknown>(BROWSER_EXTENSION_KEY)) === true;
   const statusCache = new Map<string, DriverStatus>();
   const statusRefreshedAt = new Map<string, number>();
   const installByHost = new Map<string, InstallState>();
@@ -677,18 +712,20 @@ export default async function plugin(bb: BbPluginApi) {
     name: string,
     args: Record<string, unknown>,
     options: { threadId?: string; signal?: AbortSignal },
+    action: { key: string; reason: string } | null = sensitiveAction(name, args),
+    shownName = agentToolName(name),
   ): Promise<ToolCallResult | null> {
     if (!snapshot.confirmSensitiveTools || options.threadId === undefined) return null;
-    const action = sensitiveAction(name, args);
     if (action === null || approvedForThread.get(options.threadId)?.has(action.key)) return null;
     const shown = JSON.stringify(args, null, 2);
     const outcome = await bb.ui.requestInput(
       {
         threadId: options.threadId,
         rendererId: APPROVAL_RENDERER,
-        title: `Allow ${agentToolName(name)}?`,
+        title: `Allow ${shownName}?`,
         payload: {
           tool: name,
+          shownName,
           reason: action.reason,
           arguments: shown.length > APPROVAL_ARGUMENTS_MAX ? `${shown.slice(0, APPROVAL_ARGUMENTS_MAX)}…` : shown,
         },
@@ -908,11 +945,50 @@ export default async function plugin(bb: BbPluginApi) {
     });
     registered.add(meta.name);
   }
+  const BROWSER_ACTION = {
+    key: "browser_extension",
+    reason: "work in the tabs you share in your own signed-in browser, through the Agent Browser Bridge extension",
+  };
+
+  /** One browser_* call: the setting, the approval, then the extension on the thread's machine. */
+  async function callBrowserTool(
+    hostId: string,
+    tool: BrowserTool,
+    args: Record<string, unknown>,
+    options: { threadId?: string; signal?: AbortSignal },
+  ): Promise<ToolCallResult> {
+    if (!browserExtension) {
+      return failure(
+        `The browser extension is turned off. Do not reach the same capability another way; if the task needs it, ask the user to turn on **Browser extension** in [Computer Use settings](${SETTINGS_PATH}).`,
+      );
+    }
+    const refusal = await approvalRefusal(tool.name, args, options, BROWSER_ACTION, tool.name);
+    if (refusal !== null) return refusal;
+    const { browser, ...params } = args;
+    const reply = await host.call(
+      "browserCall",
+      { method: tool.method, params, ...(typeof browser === "string" && browser !== "" ? { browser } : {}) },
+      { hostId, ...(options.signal ? { signal: options.signal } : {}) },
+    );
+    return browserToolResult(tool, reply, SETTINGS_PATH);
+  }
+
+  for (const tool of BROWSER_TOOLS) {
+    bb.agents.registerTool({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      presentation: { label: tool.labels },
+      execute: (args, context) =>
+        withHost(tool.name, context, (hostId) => callBrowserTool(hostId, tool, args as Record<string, unknown>, context)),
+    });
+    registered.add(tool.name);
+  }
   for (const tool of SNAPSHOT_CATALOG.tools) registerDriverTool(tool);
   for (const indexed of hostCatalogs.values()) for (const tool of indexed.catalog.tools) registerDriverTool(tool);
 
   /** Dedicated tools for one machine, each with that machine's own schema. */
-  function dedicatedSelections(hostId: string): Array<{ name: string; parameters: Record<string, unknown> }> {
+  function dedicatedSelections(hostId: string, reserved: number): Array<{ name: string; parameters: Record<string, unknown> }> {
     const inputs = exposureInputs();
     const selections: Array<{ name: string; parameters: Record<string, unknown> }> = [];
     for (const tool of catalogFor(hostId).catalog.tools) {
@@ -921,7 +997,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (!registered.has(name)) continue;
       selections.push({ name, parameters: overridableSchema(tool.inputSchema) ?? PERMISSIVE_SCHEMA });
     }
-    return selections.slice(0, SELECTION_MAX_IDS - META_TOOLS.length);
+    return selections.slice(0, SELECTION_MAX_IDS - META_TOOLS.length - reserved);
   }
 
   bb.agents.configure((context) => {
@@ -944,15 +1020,21 @@ export default async function plugin(bb: BbPluginApi) {
     );
     if (snapshot.confirmSensitiveTools) {
       instructions.push(
-        "Sensitive actions (clipboard text, whole-screen capture, file uploads and downloads, attaching to a signed-in browser) wait for the user to approve them in the thread. If one is not allowed, continue without it.",
+        "Sensitive actions (clipboard text, whole-screen capture, file uploads and downloads, attaching to a signed-in browser, the browser_* tools) wait for the user to approve them in the thread. If one is not allowed, continue without it.",
       );
     }
     instructions.push(
       `If a tool reports that setup is required, stop and give the user its ${SETTINGS_PATH} link instead of retrying.`,
       "Follow the cua-computer-use skill: snapshot with cua_get_window_state before element actions, act with cua_run_steps, and verify afterwards.",
     );
+    const browserTools = browserExtension ? BROWSER_TOOL_NAMES : [];
+    if (browserTools.length > 0) {
+      instructions.push(
+        "For web pages in the user's own browser, prefer the browser_* tools (Agent Browser Bridge extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref. If one reports that setup is needed, tell the user instead of switching to cua_* tools.",
+      );
+    }
     return {
-      tools: [...META_TOOLS.map((meta) => meta.name), ...dedicatedSelections(hostId)],
+      tools: [...META_TOOLS.map((meta) => meta.name), ...browserTools, ...dedicatedSelections(hostId, browserTools.length)],
       skills: [SKILL_NAME],
       instructions: instructions.join("\n"),
     };
@@ -1054,6 +1136,60 @@ export default async function plugin(bb: BbPluginApi) {
     return status;
   }
 
+  /** The unpacked extension folder, when bb runs this plugin from a local checkout. */
+  async function extensionDir(): Promise<string | null> {
+    try {
+      const source = await bb.sdk.plugins.getSource({ pluginId: bb.pluginId });
+      const root = [source.resolved, source.requested]
+        .map((value) => (value.startsWith("path:") ? value.slice("path:".length) : value))
+        .find((value) => value.startsWith("/"));
+      if (root === undefined) return null;
+      const base = source.subdirectory ? `${root.replace(/\/+$/, "")}/${source.subdirectory}` : root.replace(/\/+$/, "");
+      return `${base}/browser-extension/dist`;
+    } catch (error) {
+      bb.log.debug(`reading the plugin source failed: ${errorMessage(error)}`);
+      return null;
+    }
+  }
+
+  async function bridgeOn(hostId: string, action: "status" | "install" | "uninstall"): Promise<BrowserBridgeState> {
+    return host.call("browserBridge", { action }, { hostId });
+  }
+
+  async function buildBrowserView(): Promise<BrowserView> {
+    const [hosts, dir] = await Promise.all([bb.sdk.hosts.list(), extensionDir()]);
+    return {
+      enabled: browserExtension,
+      extensionId: BROWSER_EXTENSION_ID,
+      extensionDir: dir,
+      hosts: await Promise.all(
+        hosts
+          .filter((entry) => entry.status === "connected")
+          .map(async (entry) => {
+            try {
+              return { id: entry.id, name: entry.name, bridge: await bridgeOn(entry.id, "status"), error: null };
+            } catch (error) {
+              return { id: entry.id, name: entry.name, bridge: null, error: errorMessage(error) };
+            }
+          }),
+      ),
+    };
+  }
+
+  async function saveBrowserExtension(enabled: boolean): Promise<void> {
+    await bb.storage.kv.set(BROWSER_EXTENSION_KEY, enabled);
+    browserExtension = enabled;
+    bb.log.info(`browser extension tools ${enabled ? "on" : "off"}`);
+    bb.realtime.publish(REALTIME_CHANNEL, { reason: "settings" });
+  }
+
+  async function setupBridge(hostId: string, action: "install" | "uninstall"): Promise<BrowserBridgeState> {
+    const state = await bridgeOn(hostId, action);
+    bb.log.info(`browser bridge ${action} on host ${hostId} (user-initiated)`);
+    bb.realtime.publish(REALTIME_CHANNEL, { reason: "browser", hostId });
+    return state;
+  }
+
   bb.rpc.register(rpcContract, {
     getState: buildState,
     async setMode({ mode }) {
@@ -1076,6 +1212,15 @@ export default async function plugin(bb: BbPluginApi) {
     installDriver: ({ hostId, target }) => startInstall(hostId, target === "tested" ? TESTED_DRIVER_VERSION : null),
     installState: ({ hostId }) => readInstallState(hostId),
     grantPermissions: ({ hostId }) => grantPermissions(hostId),
+    browserState: buildBrowserView,
+    async setBrowserExtension({ enabled }) {
+      await saveBrowserExtension(enabled);
+      return buildBrowserView();
+    },
+    async browserSetup({ hostId, action }) {
+      await setupBridge(hostId, action);
+      return buildBrowserView();
+    },
   });
 
   async function startInstall(hostId: string, version: string | null): Promise<InstallState> {
@@ -1114,6 +1259,8 @@ export default async function plugin(bb: BbPluginApi) {
     `  bb cua install --yes [--latest] [--host <id>] Install Cua Driver ${TESTED_DRIVER_VERSION} (or the newest release)`,
     `  bb cua update --yes [--latest] [--host <id>]  Move to Cua Driver ${TESTED_DRIVER_VERSION} (or the newest release)`,
     "  bb cua grant [--host <id>]                    Request macOS Accessibility + Screen Recording",
+    "  bb cua browser [status|install|uninstall|on|off] [--host <id>] [--json]  The optional browser extension and its bridge",
+    "  bb cua browser call <tool> [<json-args>] [--host <id>]  Call a browser_* tool (same rules as agents)",
   ].join("\n");
 
   bb.cli.register({
@@ -1130,6 +1277,11 @@ export default async function plugin(bb: BbPluginApi) {
       { name: "install", summary: `Install Cua Driver ${TESTED_DRIVER_VERSION} with Cua's official installer (requires --yes)`, usage: "bb cua install --yes [--latest] [--host <id>]" },
       { name: "update", summary: `Move Cua Driver to ${TESTED_DRIVER_VERSION}, or the newest release with --latest (requires --yes)`, usage: "bb cua update --yes [--latest] [--host <id>]" },
       { name: "grant", summary: "Request macOS Accessibility and Screen Recording for CuaDriver.app", usage: "bb cua grant [--host <id>]" },
+      {
+        name: "browser",
+        summary: "Set up the optional Agent Browser Bridge extension, or call its browser_* tools",
+        usage: "bb cua browser [status|install|uninstall|on|off|call <tool> [<json-args>]] [--host <id>] [--json]",
+      },
     ],
     async run(argv, ctx) {
       const flags = new Set(["--json", "--yes", "--latest"]);
@@ -1307,6 +1459,50 @@ export default async function plugin(bb: BbPluginApi) {
             exitCode: state.ok === true ? 0 : 1,
             stdout: json ? JSON.stringify(state) : [summary, ...state.tail].join("\n"),
           };
+        }
+        if (command === "browser") {
+          const [action = "status", tool, rawArgs] = rest;
+          if (action === "call") {
+            const browserTool = BROWSER_TOOLS.find((entry) => entry.name === tool || entry.method === tool);
+            if (browserTool === undefined) {
+              return { exitCode: 1, stderr: `Unknown browser tool. One of: ${BROWSER_TOOL_NAMES.join(", ")}.` };
+            }
+            const value: unknown = rawArgs === undefined ? {} : JSON.parse(rawArgs);
+            const parsed = browserTool.parameters.safeParse(value);
+            if (!parsed.success) return { exitCode: 1, stderr: `Invalid arguments: ${parsed.error.message}` };
+            const result = await callBrowserTool(await targetHost(), browserTool, parsed.data as Record<string, unknown>, {
+              ...(ctx.threadId === undefined ? {} : { threadId: ctx.threadId }),
+              ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+            });
+            const text = result.content
+              .map((part) => (part.type === "text" ? part.text : `[image ${part.mimeType}, ${part.data.length} base64 chars]`))
+              .join("\n");
+            return { exitCode: result.isError ? 1 : 0, stdout: text };
+          }
+          if (action === "on" || action === "off") {
+            await saveBrowserExtension(action === "on");
+            return { exitCode: 0, stdout: `Browser extension tools: ${action}. New agent sessions pick this up.` };
+          }
+          if (action !== "status" && action !== "install" && action !== "uninstall") return { exitCode: 1, stderr: USAGE };
+          const hostId = await targetHost();
+          const bridge = action === "status" ? await bridgeOn(hostId, "status") : await setupBridge(hostId, action);
+          const dir = await extensionDir();
+          if (json) {
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({ enabled: browserExtension, extensionId: BROWSER_EXTENSION_ID, extensionDir: dir, bridge }),
+            };
+          }
+          const lines = [
+            `Browser extension tools: ${browserExtension ? "on" : "off"}`,
+            `Bridge: ${!bridge.supported ? "not supported on this platform" : bridge.installed ? "installed" : "not installed"}`,
+            ...bridge.browsers
+              .filter((entry) => entry.detected)
+              .map((entry) => `  ${entry.name}: ${entry.registered ? "registered" : "not registered"}`),
+            `Connected: ${bridge.connections.length === 0 ? "none" : bridge.connections.map((entry) => `${entry.browser} ${entry.version} (extension ${entry.extension})`).join(", ")}`,
+            `Extension id: ${BROWSER_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
+          ];
+          return { exitCode: 0, stdout: lines.join("\n") };
         }
         if (command === "grant") {
           const result = await grantPermissions(await targetHost());

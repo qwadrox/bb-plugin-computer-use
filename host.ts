@@ -18,6 +18,7 @@ import {
   type ToolCallResult,
   type ToolContentPart,
 } from "./src/contract.js";
+import { bridgeLayout, bridgeState, callBrowser, installBridge, uninstallBridge } from "./src/browser-host.js";
 import { INSTALLER_LAYOUT, TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import { McpStdioClient, type McpChild, type McpContentPart } from "./src/mcp-client.js";
 
@@ -52,6 +53,9 @@ export interface HostDependencies {
   readonly platform: NodeJS.Platform;
   readonly env: NodeJS.ProcessEnv;
   readonly homeDir: string;
+  /** The runtime this worker runs on; the browser bridge's native host runs on it too. */
+  readonly runtimePath: string;
+  readonly uid: number | null;
   readonly idleDisconnectMs?: number;
   /** The installer checksums recorded for the tested driver; tests swap in their own. */
   readonly installer?: InstallerRecord;
@@ -559,6 +563,8 @@ export function createCuaHostEntry(deps: HostDependencies) {
     return typeof properties === "object" && properties !== null && "session" in properties;
   }
 
+  const browserLayout = bridgeLayout(deps.platform, deps.homeDir, deps.uid);
+
   return experimental_defineHostEntry({
     contract: hostContract,
     experimental_signals: hostSignals,
@@ -624,6 +630,17 @@ export function createCuaHostEntry(deps: HostDependencies) {
       disconnect() {
         return { disconnected: disconnect("disconnect requested") };
       },
+      async browserBridge(input) {
+        if (input.action === "install") await installBridge(browserLayout, deps.runtimePath);
+        if (input.action === "uninstall") await uninstallBridge(browserLayout);
+        return bridgeState(browserLayout, deps.runtimePath);
+      },
+      browserCall(input, context) {
+        return callBrowser(browserLayout, input.method, input.params, {
+          signal: context.signal,
+          ...(input.browser !== undefined ? { browser: input.browser } : {}),
+        });
+      },
     },
     dispose() {
       disconnect("host entry disposed");
@@ -654,6 +671,8 @@ export default createCuaHostEntry({
   platform: process.platform,
   env: process.env,
   homeDir: homedir(),
+  runtimePath: process.execPath,
+  uid: process.getuid?.() ?? null,
   now: () => Date.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   fileExists: (path) => access(path).then(() => true, () => false),
