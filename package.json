@@ -64,7 +64,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
-    "sync:schemas": "node scripts/sync-upstream-schemas.mjs",
+    "sync:tools": "node scripts/sync-driver-tools.mjs",
     "test:live": "CUA_LIVE=1 vitest run live.test.ts"
   }
 }

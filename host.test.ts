@@ -12,7 +12,9 @@ import {
 } from "./host.js";
 import type { McpChild } from "./src/mcp-client.js";
 
-function fakeMcpServer(tools: Array<{ name: string; inputSchema: Record<string, unknown> }>) {
+function fakeMcpServer(
+  tools: Array<{ name: string; inputSchema: Record<string, unknown>; annotations?: Record<string, unknown> }>,
+) {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
@@ -22,7 +24,7 @@ function fakeMcpServer(tools: Array<{ name: string; inputSchema: Record<string, 
       if (line.trim().length === 0) continue;
       const message = JSON.parse(line) as { id?: number; method: string; params?: Record<string, unknown> };
       if (message.method === "initialize") {
-        stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-06-18" } })}\n`);
+        stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-06-18", serverInfo: { name: "cua-driver", version: "0.36.0" } } })}\n`);
       } else if (message.method === "tools/list") {
         stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools } })}\n`);
       } else if (message.method === "tools/call") {
@@ -85,7 +87,12 @@ function deps(overrides: Partial<Parameters<typeof createCuaHostEntry>[0]> & { i
   });
   const spawnMcp = vi.fn(() => server.child);
   const written: Array<{ path: string; content: string }> = [];
-  const processes: Array<{ command: string; args: readonly string[]; child: ReturnType<typeof fakeProcess> }> = [];
+  const processes: Array<{
+    command: string;
+    args: readonly string[];
+    env: Readonly<Record<string, string>> | undefined;
+    child: ReturnType<typeof fakeProcess>;
+  }> = [];
   const installedRef = { current: installed };
   return {
     entry: createCuaHostEntry({
@@ -101,9 +108,9 @@ function deps(overrides: Partial<Parameters<typeof createCuaHostEntry>[0]> & { i
       writeFile: async (path, content) => {
         written.push({ path, content });
       },
-      spawnProcess: (command, args) => {
+      spawnProcess: (command, args, env) => {
         const child = fakeProcess();
-        processes.push({ command, args, child });
+        processes.push({ command, args, env, child });
         return child;
       },
       ...overrides,
@@ -246,7 +253,7 @@ describe("cua host entry", () => {
   it("connects once, injects the session only when the tool accepts it, and retains the worker", async () => {
     const server = fakeMcpServer([
       { name: "click", inputSchema: { type: "object", properties: { session: { type: "string" }, pid: {} } } },
-      { name: "list_apps", inputSchema: { type: "object", properties: {} } },
+      { name: "list_apps", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } },
     ]);
     const { entry, spawnMcp } = deps({ server });
     const harness = experimental_createHostEntryHarness(entry);
@@ -270,6 +277,8 @@ describe("cua host entry", () => {
 
     const listed = await harness.experimental_call("listTools", { grants: [] });
     expect(listed.tools.map((tool) => tool.name)).toEqual(["click", "list_apps"]);
+    expect(listed.driverVersion).toBe("0.36.0");
+    expect(listed.tools[1]?.annotations).toEqual({ readOnlyHint: true });
     const status = await harness.experimental_call("status", { probeDaemon: false });
     expect(status).toMatchObject({ connected: true, toolCount: 2, daemonRunning: null });
 
@@ -283,13 +292,13 @@ describe("cua host entry", () => {
     const { entry, written, processes, installedRef } = deps({ installed: false });
     const harness = experimental_createHostEntryHarness(entry);
 
-    const started = await harness.experimental_call("install", null);
-    expect(started).toMatchObject({ running: true, ok: null, step: "starting" });
+    const started = await harness.experimental_call("install", { version: null });
+    expect(started).toMatchObject({ running: true, ok: null, step: "starting", target: null });
     expect(harness.experimental_getRetainedWorkerLeaseCount()).toBe(1);
     await flush();
     expect(written[0]?.path).toMatch(/cua-driver-install\.sh$/);
     expect(written[0]?.content).toContain("https://cua.ai/driver/install.sh");
-    expect(processes[0]).toMatchObject({ command: "/bin/bash", args: [written[0]!.path] });
+    expect(processes[0]).toMatchObject({ command: "/bin/bash", args: [written[0]!.path], env: undefined });
 
     processes[0]!.child.emitLine("Installed cua-driver 0.23.2");
     installedRef.current = true;
@@ -340,15 +349,19 @@ describe("cua host entry", () => {
     await harness.experimental_dispose();
   });
 
-  it("stops the running driver before an update replaces it", async () => {
+  it("stops the running driver before an update replaces it, and pins the requested version", async () => {
     const { entry, processes, written } = deps({ installed: true });
     const harness = experimental_createHostEntryHarness(entry);
-    await harness.experimental_call("install", null);
+    expect(await harness.experimental_call("install", { version: "0.36.0" })).toMatchObject({ target: "0.36.0" });
     await flush();
     expect(processes[0]).toMatchObject({ command: "/Users/test/.local/bin/cua-driver", args: ["stop"] });
     processes[0]!.child.exit(0);
     await flush();
-    expect(processes[1]).toMatchObject({ command: "/bin/bash", args: [written[0]!.path] });
+    expect(processes[1]).toMatchObject({
+      command: "/bin/bash",
+      args: [written[0]!.path],
+      env: { CUA_DRIVER_RS_VERSION: "0.36.0" },
+    });
     processes[1]!.child.exit(0);
     await flush();
     expect(processes[2]).toMatchObject({ command: "open", args: ["-n", "-g", "-a", "CuaDriver", "--args", "serve"] });
@@ -361,7 +374,7 @@ describe("cua host entry", () => {
   it("marks a failed installer run and keeps the machine uninstalled", async () => {
     const { entry, processes } = deps({ installed: false });
     const harness = experimental_createHostEntryHarness(entry);
-    await harness.experimental_call("install", null);
+    await harness.experimental_call("install", { version: null });
     await flush();
     processes[0]!.child.emitLine("curl: (6) Could not resolve host");
     processes[0]!.child.exit(6);

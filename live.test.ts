@@ -82,10 +82,35 @@ async function livePlugin(settings: Record<string, string | boolean> = {}) {
     controller.abort();
   });
   const call = (tool: string, args: Json) => harness.behavior.callAgentTool(tool, args);
-  return { call };
+  return { call, harness };
 }
 
 describe.skipIf(!LIVE)("live against the installed Cua Driver", () => {
+  it("reads this machine's tools, reports drift, and gates cua_call without touching the desktop", async () => {
+    const { call, harness } = await livePlugin();
+    const status = textOf(await call("cua_status", {}));
+    expect(status).toMatch(/Cua Driver \S+ is installed/);
+
+    const drift = await harness.behavior.runCli(["drift"]);
+    expect(drift.exitCode, drift.stderr).toBe(0);
+    expect(drift.stdout).toMatch(/^Cua Driver /);
+
+    const described = textOf(await call("cua_describe", {}));
+    expect(described).toMatch(/Dedicated tools \(call them directly\):\n- cua_/);
+    expect(described).toMatch(/- run_script: /);
+
+    const steps = textOf(await call("cua_describe", { tool: "run_steps" }));
+    expect(steps).toMatch(/^run_steps \(Call it as cua_run_steps\.\)/);
+    expect(steps).toContain("\"steps\"");
+
+    const refused = await call("cua_call", { tool: "run_script", arguments: { language: "applescript", source: "beep" } });
+    expect(typeof refused !== "string" && refused.isError).toBe(true);
+    expect(textOf(refused)).toMatch(/turned off/);
+
+    const size = structuredOf(await call("cua_call", { tool: "get_screen_size", arguments: {} }));
+    expect(Object.keys(size).length).toBeGreaterThan(0);
+  }, 60_000);
+
   it("computes 6 × 7 in Calculator through the plugin's tools", async () => {
     const { call } = await livePlugin();
     const launched = structuredOf(await call("cua_launch_app", { bundle_id: "com.apple.calculator" }));
@@ -125,7 +150,8 @@ describe.skipIf(!LIVE)("live against the installed Cua Driver", () => {
       const final = await call("cua_get_window_state", { pid, window_id: windowId });
       expect(textOf(final)).toMatch(/\b42\b/);
     } finally {
-      await call("cua_call", { tool: "kill_app", arguments: { pid } });
+      // kill_app is off by default; quit the way a person would.
+      await call("cua_hotkey", { pid, keys: ["cmd", "q"] });
     }
   }, 120_000);
 

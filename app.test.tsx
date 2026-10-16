@@ -14,7 +14,8 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 
 const baseState = {
   mode: "prefer-native",
-  groups: { browser: true, clipboard: true, passthrough: true },
+  groups: { browser: true, clipboard: true },
+  testedVersion: "0.36.0",
   providers: [
     { id: "codex", displayName: "Codex", available: true, native: true, override: "inherit", decision: "native", decisionLabel: "Harness-native computer use" },
     { id: "pi", displayName: "Pi", available: true, native: false, override: "inherit", decision: "cua", decisionLabel: "Cua Driver tools" },
@@ -28,7 +29,7 @@ const baseState = {
         platform: "darwin",
         installed: true,
         binaryPath: "/x",
-        version: "0.23.2",
+        version: "0.36.0",
         daemonRunning: true,
         permissions: { accessibility: true, screenRecording: false, directCapture: "not_checked" },
         connected: false,
@@ -37,6 +38,7 @@ const baseState = {
         checkedAt: "2026-01-01T00:00:00.000Z",
       },
       install: { running: false, ok: null, exitCode: null, step: null, tail: [], startedAt: null, finishedAt: null },
+      drift: null,
     },
     {
       id: "host_2",
@@ -55,9 +57,15 @@ const baseState = {
         checkedAt: "2026-01-01T00:00:00.000Z",
       },
       install: { running: false, ok: null, exitCode: null, step: null, tail: [], startedAt: null, finishedAt: null },
+      drift: null,
     },
   ],
-  toolNames: ["cua_click", "cua_get_window_state"],
+  tools: [
+    { name: "click", group: "desktop", exposure: "tool", defaultExposure: "tool", source: "reviewed", override: null, groupEnabled: true, readOnly: false, summary: "Click an element." },
+    { name: "get_screen_size", group: "desktop", exposure: "call", defaultExposure: "call", source: "reviewed", override: null, groupEnabled: true, readOnly: true, summary: "Screen size." },
+    { name: "peek_menu_bar", group: "desktop", exposure: "call", defaultExposure: "call", source: "unreviewed", override: null, groupEnabled: true, readOnly: true, summary: "Read the menu bar." },
+    { name: "run_script", group: "desktop", exposure: "off", defaultExposure: "off", source: "reviewed", override: null, groupEnabled: true, readOnly: false, summary: "Run AppleScript." },
+  ],
 };
 
 describe("settings sections", () => {
@@ -66,6 +74,7 @@ describe("settings sections", () => {
     expect(app.settingsSections.map((section) => ({ id: section.id, title: section.title }))).toEqual([
       { id: "routing", title: "Routing mode" },
       { id: "provider-overrides", title: "Provider overrides" },
+      { id: "agent-tools", title: "Agent tools" },
       { id: "driver-machines", title: "Cua Driver on your machines" },
       { id: "about", title: "About Computer Use" },
     ]);
@@ -174,8 +183,9 @@ describe("settings sections", () => {
     expect(installCalls).toEqual([]);
 
     fireEvent.click(await slot.findByRole("button", { name: "Install Cua Driver…" }));
-    fireEvent.click(await slot.findByRole("button", { name: "Run installer" }));
-    await waitFor(() => expect(installCalls).toEqual([{ hostId: "host_2" }]));
+    expect(await slot.findByRole("button", { name: "Newest release" })).toBeTruthy();
+    fireEvent.click(await slot.findByRole("button", { name: "Install v0.36.0" }));
+    await waitFor(() => expect(installCalls).toEqual([{ hostId: "host_2", target: "tested" }]));
     const progress = await slot.findByRole("progressbar", { name: "Estimated installation progress" });
     expect(progress.getAttribute("aria-valuenow")).toBe("20");
     fireEvent.click(await slot.findByRole("button", { name: /Installation details/ }));
@@ -241,7 +251,7 @@ describe("settings sections", () => {
     fireEvent.blur(hint);
     expect(slot.queryByText("Available to bb")).toBeNull();
     expect(slot.queryByText("Allowed for CuaDriver.app")).toBeNull();
-    expect(await slot.findByText("v0.23.2")).toBeTruthy();
+    expect(await slot.findByText("v0.36.0 · tested")).toBeTruthy();
 
     const permissionButton = await slot.findByRole("button", { name: "Grant macOS permissions" });
     expect(permissionButton.classList.contains("w-full")).toBe(true);
@@ -263,25 +273,82 @@ describe("settings sections", () => {
     slot.lifecycle.unmount();
   });
 
-  it("offers an update when a ready machine runs an older Cua Driver", async () => {
+  it("moves a machine on another driver version to the tested one and reports its drift", async () => {
     const app = await loadPluginApp(() => import("./app"));
     const section = app.settingsSections.find((candidate) => candidate.id === "driver-machines")!;
     const [laptop] = baseState.hosts;
-    const outdated = {
+    const installCalls: unknown[] = [];
+    const untested = {
+      ...laptop!,
+      driver: {
+        ...laptop!.driver,
+        version: "0.37.0",
+        permissions: { accessibility: true, screenRecording: true, directCapture: "not_checked" },
+        latestVersion: "0.37.0",
+        updateAvailable: false,
+      },
+      drift: {
+        testedVersion: "0.36.0",
+        driverVersion: "0.37.0",
+        added: ["peek_menu_bar"],
+        removed: [],
+        changed: [],
+        drifted: true,
+        summary: "Cua Driver 0.37.0 is untested (plugin tested with 0.36.0): 1 new (peek_menu_bar).",
+      },
+    };
+    const slot = renderSlot(section, {}, {
+      rpc: {
+        getState: () => ({ ...baseState, hosts: [untested] }),
+        installDriver: (input: unknown) => {
+          installCalls.push(input);
+          return { ...laptop!.install, running: true };
+        },
+      },
+    });
+
+    const machine = await slot.findByRole("button", { name: /^laptop setup/ });
+    if (machine.getAttribute("aria-expanded") !== "true") fireEvent.click(machine);
+    expect(await slot.findByText("v0.37.0 · untested")).toBeTruthy();
+    expect((await slot.findByText(/1 new \(peek_menu_bar\)/)).closest("[data-driver-drift]")).toBeTruthy();
+    fireEvent.click(await slot.findByRole("button", { name: "Switch to tested v0.36.0…" }));
+    await slot.findByRole("dialog", { name: "Change Cua Driver on laptop" });
+    fireEvent.click(await slot.findByRole("button", { name: "Install v0.36.0" }));
+    await waitFor(() => expect(installCalls).toEqual([{ hostId: "host_1", target: "tested" }]));
+    slot.lifecycle.unmount();
+  });
+
+  it("offers a newer release on the tested driver only as an untested choice", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const section = app.settingsSections.find((candidate) => candidate.id === "driver-machines")!;
+    const [laptop] = baseState.hosts;
+    const installCalls: unknown[] = [];
+    const behind = {
       ...laptop!,
       driver: {
         ...laptop!.driver,
         permissions: { accessibility: true, screenRecording: true, directCapture: "not_checked" },
-        latestVersion: "0.28.2",
+        latestVersion: "0.38.0",
         updateAvailable: true,
       },
     };
-    const slot = renderSlot(section, {}, { rpc: { getState: () => ({ ...baseState, hosts: [outdated] }) } });
-
+    const slot = renderSlot(section, {}, {
+      rpc: {
+        getState: () => ({ ...baseState, hosts: [behind] }),
+        installDriver: (input: unknown) => {
+          installCalls.push(input);
+          return { ...laptop!.install, running: true };
+        },
+      },
+    });
     const machine = await slot.findByRole("button", { name: /^laptop setup/ });
     if (machine.getAttribute("aria-expanded") !== "true") fireEvent.click(machine);
-    expect(await slot.findByText("v0.23.2 · v0.28.2 available")).toBeTruthy();
-    expect(await slot.findByRole("button", { name: "Update to v0.28.2…" })).toBeTruthy();
+    expect(await slot.findByText("v0.36.0 · tested")).toBeTruthy();
+    fireEvent.click(await slot.findByRole("button", { name: "v0.38.0 available (untested)…" }));
+    const tested = await slot.findByRole("button", { name: "v0.36.0 installed" });
+    expect((tested as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await slot.findByRole("button", { name: "Newest v0.38.0 (untested)" }));
+    await waitFor(() => expect(installCalls).toEqual([{ hostId: "host_1", target: "latest" }]));
     slot.lifecycle.unmount();
   });
 
@@ -397,6 +464,39 @@ describe("settings sections", () => {
     expect(readyBadges.length).toBeGreaterThan(1);
     expect(Array.from(readyBadges).every((badge) => badge.textContent === "")).toBe(true);
     expect(Array.from(readyBadges).every((badge) => badge.getAttribute("aria-label") === "Ready")).toBe(true);
+    slot.lifecycle.unmount();
+  });
+
+  it("lists tools by how agents reach them and saves one tool's exposure", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const section = app.settingsSections.find((candidate) => candidate.id === "agent-tools")!;
+    const calls: unknown[] = [];
+    const slot = renderSlot(section, {}, {
+      rpc: {
+        getState: () => baseState,
+        setExposure: (raw: unknown) => {
+          calls.push(raw);
+          const input = raw as { tool: string; exposure: string };
+          return {
+            ...baseState,
+            tools: baseState.tools.map((tool) =>
+              tool.name === input.tool ? { ...tool, exposure: input.exposure, override: input.exposure } : tool,
+            ),
+          };
+        },
+      },
+    });
+
+    const disclosure = await slot.findByRole("button", { name: /Customize individual tools/ });
+    expect(disclosure.textContent).toContain("1 dedicated · 2 via cua_call · 1 off");
+    expect((await slot.findByText(/1 tool from a newer Cua Driver has not been reviewed/)).hasAttribute("data-unreviewed-tools")).toBe(true);
+    fireEvent.click(disclosure);
+    const select = await slot.findByLabelText("run_script exposure");
+    expect((select as HTMLSelectElement).value).toBe("default");
+    expect(select.textContent).toContain("Default (Off)");
+    fireEvent.change(select, { target: { value: "call" } });
+    await waitFor(() => expect(calls).toEqual([{ tool: "run_script", exposure: "call" }]));
+    await waitFor(() => expect(disclosure.textContent).toContain("1 dedicated · 3 via cua_call · 0 off"));
     slot.lifecycle.unmount();
   });
 

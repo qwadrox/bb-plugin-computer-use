@@ -1,71 +1,176 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG, CATALOG_BY_NAME, overridableSchema, toolNamesForGroups } from "./catalog.js";
-import { UPSTREAM_SCHEMAS } from "./upstream-schemas.generated.js";
+import { META_TOOLS, advertisedSchema, agentToolName, driverToolName, overridableSchema } from "./catalog.js";
+import { diffCatalogs, formatDrift, hasDrift, summarizeDrift } from "./drift.js";
+import { compactSchema, leadParagraph, normalizeDriverTool, normalizeDriverTools, type DriverTool } from "./driver-tools.js";
+import { REVIEWED_TOOLS, defaultExposure, groupOf, normalizeOverrides, resolveExposure } from "./exposure.js";
+import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./snapshot.js";
 
-function propertyNames(schema: Record<string, unknown>): string[] {
-  const properties = schema.properties;
-  return typeof properties === "object" && properties !== null ? Object.keys(properties).sort() : [];
+function tool(name: string, schema: Record<string, unknown> = { type: "object" }, readOnly?: boolean): DriverTool {
+  return { name, description: name, inputSchema: schema, annotations: readOnly === undefined ? {} : { readOnlyHint: readOnly } };
 }
 
+const allGroups = { overrides: {}, enabledGroups: new Set(["desktop", "browser", "clipboard"] as const) };
+
+describe("tested snapshot", () => {
+  it("records the driver version and its full tool list", () => {
+    expect(TESTED_DRIVER_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(SNAPSHOT_CATALOG.tools.length).toBeGreaterThan(40);
+    expect(SNAPSHOT_CATALOG.tools.map((entry) => entry.name)).toContain("run_steps");
+  });
+
+  // A driver release that adds or renames tools fails here until someone
+  // decides how agents should reach each one (src/exposure.ts).
+  it("has a reviewed exposure for every tool of the tested driver", () => {
+    const unreviewed = SNAPSHOT_CATALOG.tools.map((entry) => entry.name).filter((name) => REVIEWED_TOOLS[name] === undefined);
+    expect(unreviewed).toEqual([]);
+    const stale = Object.keys(REVIEWED_TOOLS).filter((name) => !SNAPSHOT_CATALOG.tools.some((entry) => entry.name === name));
+    expect(stale).toEqual([]);
+  });
+
+  it("fits bb's limits: one kv value per machine, and every dedicated schema as an override", () => {
+    const bytes = new TextEncoder().encode(JSON.stringify(SNAPSHOT_CATALOG)).byteLength;
+    expect(bytes).toBeLessThan(256 * 1024);
+    const dedicated = SNAPSHOT_CATALOG.tools.filter((entry) => resolveExposure(entry.name, entry, allGroups) === "tool");
+    expect(dedicated.length).toBeGreaterThan(20);
+    for (const entry of dedicated) expect(overridableSchema(entry.inputSchema), entry.name).not.toBeNull();
+    const prompt = dedicated.reduce((sum, entry) => sum + JSON.stringify(advertisedSchema(entry.inputSchema)).length, 0);
+    expect(prompt).toBeLessThan(80_000);
+  });
+
+  it("keeps progress labels and summaries short", () => {
+    for (const [name, reviewed] of Object.entries(REVIEWED_TOOLS)) {
+      if (reviewed.labels !== undefined) {
+        expect(reviewed.labels.pending.length, name).toBeLessThanOrEqual(80);
+        expect(reviewed.labels.completed.length, name).toBeLessThanOrEqual(80);
+      }
+      if (reviewed.summary !== undefined) expect(reviewed.summary.length, name).toBeLessThanOrEqual(600);
+    }
+  });
+});
+
+describe("driver tools", () => {
+  it("compacts prose but keeps every validation keyword", () => {
+    const compacted = compactSchema({
+      type: "object",
+      description: "First sentence. Second sentence with detail.",
+      examples: [{ pid: 1 }],
+      properties: {
+        description: { type: "string", description: "A property named description. More." },
+        pid: { type: "integer", minimum: 1, description: "Process id." },
+      },
+      required: ["pid"],
+    });
+    expect(compacted).toEqual({
+      type: "object",
+      description: "First sentence.",
+      properties: {
+        description: { type: "string", description: "A property named description." },
+        pid: { type: "integer", minimum: 1, description: "Process id." },
+      },
+      required: ["pid"],
+    });
+  });
+
+  it("normalizes raw tools/list entries and skips unusable ones", () => {
+    expect(normalizeDriverTool({ description: "no name" })).toBeNull();
+    const normalized = normalizeDriverTool({
+      name: "zoom",
+      description: "Zoom in.\n\nLong detail.",
+      input_schema: { type: "object" },
+      annotations: { readOnlyHint: true, title: "ignored" },
+    });
+    expect(normalized).toEqual({ name: "zoom", description: "Zoom in.", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } });
+    expect(normalizeDriverTools([{ name: "b" }, { name: "a" }, null]).map((entry) => entry.name)).toEqual(["a", "b"]);
+    expect(leadParagraph("x".repeat(2_000)).length).toBe(1_500);
+  });
+});
+
 describe("catalog", () => {
-  it("advertises Cua Driver's own schema for every upstream tool, without the plugin-owned session", () => {
-    for (const entry of CATALOG) {
-      if (entry.upstream === null) continue;
-      const upstream = UPSTREAM_SCHEMAS[entry.upstream];
-      expect(upstream, entry.name).toBeDefined();
-      expect(propertyNames(entry.inputSchema), entry.name).toEqual(
-        propertyNames(upstream!).filter((name) => name !== "session"),
-      );
-      expect((entry.inputSchema.required as string[] | undefined) ?? [], entry.name).not.toContain("session");
-      expect(entry.inputSchema.type, entry.name).toBe("object");
-      expect(entry.parameters, entry.name).toBeNull();
-    }
+  it("prefixes agent tool names and accepts either form back", () => {
+    expect(agentToolName("click")).toBe("cua_click");
+    expect(driverToolName("cua_click")).toBe("click");
+    expect(driverToolName("click")).toBe("click");
+    expect(META_TOOLS.map((meta) => meta.name)).toEqual(["cua_call", "cua_describe", "cua_status"]);
   });
 
-  it("keeps the rest of a required list when the upstream tool also requires session", () => {
-    expect(UPSTREAM_SCHEMAS.browser_download?.required).toContain("session");
-    const download = CATALOG_BY_NAME.get("cua_browser_download");
-    expect(download?.inputSchema.required).toEqual(
-      expect.arrayContaining(["target_id", "tab_id", "ref", "destination_root"]),
-    );
-    expect(download?.inputSchema.required).not.toContain("session");
-  });
-
-  it("validates only the plugin's own meta tools", () => {
-    for (const name of ["cua_call", "cua_describe", "cua_status"]) {
-      const entry = CATALOG_BY_NAME.get(name);
-      expect(entry?.parameters, name).not.toBeNull();
-      expect(entry?.inputSchema.type, name).toBe("object");
-    }
-  });
-
-  it("uses unique cua_-prefixed names and upstream names without the prefix", () => {
-    const names = CATALOG.map((entry) => entry.name);
-    expect(new Set(names).size).toBe(names.length);
-    for (const entry of CATALOG) {
-      expect(entry.name.startsWith("cua_")).toBe(true);
-      if (entry.upstream !== null) expect(entry.name).toBe(`cua_${entry.upstream}`);
-      expect(entry.labels.pending.length).toBeLessThanOrEqual(80);
-      expect(entry.labels.completed.length).toBeLessThanOrEqual(80);
-    }
-  });
-
-  it("keeps desktop tools in every group selection", () => {
-    expect(toolNamesForGroups(new Set(["desktop"]))).toContain("cua_click");
-    expect(toolNamesForGroups(new Set(["desktop"]))).toContain("cua_get_accessibility_tree");
-    expect(toolNamesForGroups(new Set(["desktop"]))).not.toContain("cua_browser_click");
-    expect(toolNamesForGroups(new Set(["browser"]))).toEqual(expect.arrayContaining(["cua_browser_download", "cua_browser_set_input_files"]));
-    expect(toolNamesForGroups(new Set(["desktop", "meta"]))).toContain("cua_call");
-  });
-
-  it("falls back to the bundled schema for a live one bb would refuse as an override", () => {
+  it("drops the plugin-owned session argument but keeps the rest of the required list", () => {
     const plain = { type: "object", properties: { pid: { type: "integer" }, session: { type: "string" } }, required: ["pid", "session"] };
     expect(overridableSchema(plain)).toEqual({ type: "object", properties: { pid: { type: "integer" } }, required: ["pid"] });
+    const onlySession = { type: "object", properties: { session: { type: "string" } }, required: ["session"] };
+    expect(overridableSchema(onlySession)).toEqual({ type: "object", properties: {} });
+  });
 
-    const recursive = { type: "object", properties: { node: { $ref: "#" } } };
-    expect(overridableSchema(recursive)).toBeNull();
+  it("refuses an override bb would reject", () => {
+    expect(overridableSchema({ type: "object", properties: { node: { $ref: "#" } } })).toBeNull();
+    expect(overridableSchema({ type: "object", properties: { pid: { type: "integer", description: "x".repeat(130 * 1024) } } })).toBeNull();
+  });
+});
 
-    const huge = { type: "object", properties: { pid: { type: "integer", description: "x".repeat(130 * 1024) } } };
-    expect(overridableSchema(huge)).toBeNull();
+describe("exposure", () => {
+  it("keeps code execution, process control, and driver configuration off by default", () => {
+    for (const name of ["run_script", "kill_app", "install_extension", "set_config", "replay_trajectory"]) {
+      expect(defaultExposure(name, tool(name)).exposure, name).toBe("off");
+    }
+    expect(defaultExposure("run_steps", tool("run_steps")).exposure).toBe("tool");
+    expect(defaultExposure("get_screen_size", tool("get_screen_size")).exposure).toBe("call");
+  });
+
+  it("lets only read-only unreviewed tools through, and only through cua_call", () => {
+    expect(defaultExposure("brand_new_reader", tool("brand_new_reader", undefined, true))).toEqual({ exposure: "call", source: "unreviewed" });
+    expect(defaultExposure("brand_new_writer", tool("brand_new_writer", undefined, false))).toEqual({ exposure: "off", source: "unreviewed" });
+    expect(defaultExposure("brand_new_unknown", undefined)).toEqual({ exposure: "off", source: "unreviewed" });
+  });
+
+  it("applies user overrides, group switches, and never exposes the managed session tools", () => {
+    const inputs = { overrides: { run_script: "call" as const, click: "off" as const }, enabledGroups: new Set(["desktop"] as const) };
+    expect(resolveExposure("run_script", tool("run_script"), inputs)).toBe("call");
+    expect(resolveExposure("click", tool("click"), inputs)).toBe("off");
+    expect(resolveExposure("browser_click", tool("browser_click"), inputs)).toBe("off");
+    expect(resolveExposure("browser_brand_new", tool("browser_brand_new", undefined, true), inputs)).toBe("off");
+    expect(groupOf("clipboard_brand_new")).toBe("clipboard");
+    expect(resolveExposure("start_session", tool("start_session"), { ...inputs, overrides: { start_session: "tool" } })).toBe("off");
+    expect(normalizeOverrides({ start_session: "tool", click: "sideways", zoom: "off", "": "off" })).toEqual({ zoom: "off" });
+  });
+});
+
+describe("drift", () => {
+  const tested = {
+    driverVersion: "1.0.0",
+    tools: [
+      tool("click", { type: "object", properties: { pid: { type: "integer" } }, required: ["pid"] }, false),
+      tool("zoom", { type: "object", properties: { scale: { type: "number" } } }, true),
+      tool("gone", { type: "object" }),
+    ],
+  };
+
+  it("reports added, removed, and changed tools but not description wording", () => {
+    const live = {
+      driverVersion: "1.1.0",
+      tools: [
+        { ...tool("click", { type: "object", properties: { pid: { type: "integer" }, x: { type: "number" } }, required: ["pid", "x"] }, false), description: "reworded" },
+        tool("zoom", { type: "object", properties: { scale: { type: "number", minimum: 1 } } }, true),
+        tool("fresh", { type: "object" }, true),
+      ],
+    };
+    const report = diffCatalogs(tested, live);
+    expect(report.added).toEqual(["fresh"]);
+    expect(report.removed).toEqual(["gone"]);
+    expect(report.changed).toEqual([
+      { name: "click", details: ["new arguments: x", "required: [pid, x]"] },
+      { name: "zoom", details: ["argument details changed"] },
+    ]);
+    expect(hasDrift(report)).toBe(true);
+    expect(summarizeDrift(report)).toBe(
+      "Cua Driver 1.1.0 is untested (plugin tested with 1.0.0): 1 new (fresh); 1 removed (gone); 2 changed (click, zoom).",
+    );
+    expect(formatDrift(report)).toContain("  ~ click: new arguments: x; required: [pid, x]");
+    expect(summarizeDrift({ ...report, added: ["a", "b", "c"] }, 2)).toMatch(/3 new \(a, b, and 1 more\)/);
+  });
+
+  it("calls an identical catalog clean, whatever its version", () => {
+    expect(summarizeDrift(diffCatalogs(tested, tested))).toBe("Cua Driver 1.0.0 is the version this plugin was tested with.");
+    const relabeled = diffCatalogs(tested, { ...tested, driverVersion: "1.0.1" });
+    expect(hasDrift(relabeled)).toBe(false);
+    expect(summarizeDrift(relabeled)).toMatch(/differs from the tested 1\.0\.0, but its tools are unchanged/);
   });
 });

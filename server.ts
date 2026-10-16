@@ -1,13 +1,12 @@
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
-  CATALOG,
-  CATALOG_BY_NAME,
+  META_TOOLS,
+  PERMISSIVE_SCHEMA,
   PLUGIN_MANAGED_ARGUMENTS,
+  agentToolName,
+  driverToolName,
   overridableSchema,
-  toolNamesForGroups,
-  type CatalogEntry,
-  type ToolGroup,
 } from "./src/catalog.js";
 import {
   IDLE_INSTALL_STATE,
@@ -16,11 +15,27 @@ import {
   hostContract,
   hostSignals,
   installStateSchema,
+  type CatalogTool,
   type DriverGrant,
   type DriverStatus,
   type InstallState,
   type ToolCallResult,
 } from "./src/contract.js";
+import { diffCatalogs, formatDrift, hasDrift, summarizeDrift, type DriftReport } from "./src/drift.js";
+import { leadParagraph, normalizeDriverTools, type DriverCatalog, type DriverTool } from "./src/driver-tools.js";
+import {
+  EXPOSURES,
+  TOOL_GROUPS,
+  defaultExposure,
+  groupOf,
+  isManaged,
+  normalizeOverrides,
+  presentationFor,
+  resolveExposure,
+  type Exposure,
+  type ExposureInputs,
+  type ToolGroup,
+} from "./src/exposure.js";
 import {
   DEFAULT_POLICY,
   PROVIDER_OVERRIDES,
@@ -33,20 +48,27 @@ import {
   type RoutingMode,
   type RoutingPolicy,
 } from "./src/policy.js";
-import { UPSTREAM_DRIVER_VERSION } from "./src/upstream-schemas.generated.js";
+import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./src/snapshot.js";
 
 const OVERRIDES_KEY = "policy-overrides";
+const EXPOSURE_KEY = "tool-exposure";
 const STATUS_KEY_PREFIX = "driver-status:";
+const CATALOG_KEY_PREFIX = "catalog:";
 const SKILL_NAME = "cua-computer-use";
 const REALTIME_CHANNEL = "state-changed";
 const SESSION_LABEL_MAX = 125;
 const STATUS_FRESH_MS = 30_000;
 const SETTINGS_PATH = "/settings/plugins/computer-use";
+/** bb's limits: tool ids per selection, and bytes per kv value. */
+const SELECTION_MAX_IDS = 256;
+const KV_VALUE_MAX_BYTES = 256 * 1024;
+const AGENT_TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export const INSTALL_INSTRUCTIONS = [
-  "Install Cua Driver on the machine that runs this thread:",
-  "  macOS/Linux: /bin/bash -c \"$(curl -fsSL https://cua.ai/driver/install.sh)\"",
-  "  Windows:     irm https://cua.ai/driver/install.ps1 | iex",
+  `Install Cua Driver ${TESTED_DRIVER_VERSION} (the version this plugin was tested with) on the machine that runs this thread:`,
+  `  From bb: open ${SETTINGS_PATH}, expand the machine, and select Install Cua Driver; or run \`bb cua install --yes\`.`,
+  `  macOS/Linux: CUA_DRIVER_RS_VERSION=${TESTED_DRIVER_VERSION} /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"`,
+  `  Windows:     $env:CUA_DRIVER_RS_VERSION="${TESTED_DRIVER_VERSION}"; irm https://cua.ai/driver/install.ps1 | iex`,
   "Then run `cua-driver doctor`. On macOS also run `cua-driver permissions grant` and approve Accessibility and Screen Recording.",
   "Docs: https://cua.ai/docs/how-to-guides/driver/install",
 ].join("\n");
@@ -63,6 +85,18 @@ const providerViewSchema = z
   })
   .strict();
 
+const driftViewSchema = z
+  .object({
+    testedVersion: z.string().nullable(),
+    driverVersion: z.string().nullable(),
+    added: z.array(z.string()),
+    removed: z.array(z.string()),
+    changed: z.array(z.object({ name: z.string(), details: z.array(z.string()) }).strict()),
+    drifted: z.boolean(),
+    summary: z.string(),
+  })
+  .strict();
+
 const hostViewSchema = z
   .object({
     id: z.string(),
@@ -70,18 +104,37 @@ const hostViewSchema = z
     status: z.enum(["connected", "disconnected"]),
     driver: driverStatusSchema.nullable(),
     install: installStateSchema,
+    /** Null until the plugin has read this machine's own tool list. */
+    drift: driftViewSchema.nullable(),
+  })
+  .strict();
+
+const toolViewSchema = z
+  .object({
+    name: z.string(),
+    group: z.enum(TOOL_GROUPS),
+    exposure: z.enum(EXPOSURES),
+    defaultExposure: z.enum(EXPOSURES),
+    source: z.enum(["reviewed", "unreviewed"]),
+    override: z.enum(EXPOSURES).nullable(),
+    groupEnabled: z.boolean(),
+    readOnly: z.boolean(),
+    summary: z.string(),
   })
   .strict();
 
 const stateSchema = z
   .object({
     mode: z.enum(ROUTING_MODES),
-    groups: z.object({ browser: z.boolean(), clipboard: z.boolean(), passthrough: z.boolean() }).strict(),
+    groups: z.object({ browser: z.boolean(), clipboard: z.boolean() }).strict(),
+    testedVersion: z.string(),
     providers: z.array(providerViewSchema),
     hosts: z.array(hostViewSchema),
-    toolNames: z.array(z.string()),
+    tools: z.array(toolViewSchema),
   })
   .strict();
+
+const hostInput = z.object({ hostId: z.string().min(1) }).strict();
 
 export const rpcContract = defineRpcContract({
   getState: { input: z.null(), output: stateSchema },
@@ -90,38 +143,49 @@ export const rpcContract = defineRpcContract({
     input: z.object({ providerId: z.string().min(1), override: z.enum(PROVIDER_OVERRIDES) }).strict(),
     output: stateSchema,
   },
-  refreshStatus: {
-    input: z.object({ hostId: z.string().min(1) }).strict(),
-    output: driverStatusSchema,
+  setExposure: {
+    input: z.object({ tool: z.string().min(1), exposure: z.enum([...EXPOSURES, "default"]) }).strict(),
+    output: stateSchema,
   },
-  listTools: {
-    input: z.object({ hostId: z.string().min(1) }).strict(),
-    output: z.object({ tools: z.array(catalogToolSchema) }).strict(),
-  },
+  refreshStatus: { input: hostInput, output: driverStatusSchema },
+  listTools: { input: hostInput, output: z.object({ tools: z.array(catalogToolSchema) }).strict() },
   installDriver: {
-    input: z.object({ hostId: z.string().min(1) }).strict(),
+    input: z.object({ hostId: z.string().min(1), target: z.enum(["tested", "latest"]) }).strict(),
     output: installStateSchema,
   },
-  installState: {
-    input: z.object({ hostId: z.string().min(1) }).strict(),
-    output: installStateSchema,
-  },
-  grantPermissions: {
-    input: z.object({ hostId: z.string().min(1) }).strict(),
-    output: z.object({ ok: z.boolean(), output: z.string() }).strict(),
-  },
+  installState: { input: hostInput, output: installStateSchema },
+  grantPermissions: { input: hostInput, output: z.object({ ok: z.boolean(), output: z.string() }).strict() },
 });
 
 type State = z.infer<typeof stateSchema>;
+type ToolView = z.infer<typeof toolViewSchema>;
+type DriftView = z.infer<typeof driftViewSchema>;
 
 interface SettingsSnapshot {
   mode: RoutingMode;
   browserTools: boolean;
   clipboardTools: boolean;
-  passthroughTools: boolean;
   signedInBrowserProfiles: boolean;
   sessionPrefix: string;
 }
+
+/** A machine's catalog with a name index and its drift from the tested release. */
+interface IndexedCatalog {
+  catalog: DriverCatalog;
+  byName: Map<string, DriverTool>;
+  /** Null for the bundled snapshot, which is not any machine's own list. */
+  drift: DriftReport | null;
+}
+
+function indexCatalog(catalog: DriverCatalog, own: boolean): IndexedCatalog {
+  return {
+    catalog,
+    byName: new Map(catalog.tools.map((tool) => [tool.name, tool])),
+    drift: own ? diffCatalogs(SNAPSHOT_CATALOG, catalog) : null,
+  };
+}
+
+const SNAPSHOT_INDEX = indexCatalog(SNAPSHOT_CATALOG, false);
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -130,6 +194,12 @@ function errorMessage(error: unknown): string {
 function sessionLabel(prefix: string, threadId: string): string {
   const raw = `${prefix}-${threadId}`.replace(/[^A-Za-z0-9._-]+/g, "-");
   return raw.slice(0, SESSION_LABEL_MAX);
+}
+
+function firstSentence(text: string, limit = 160): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const sentence = /^(.+?[.!?])(\s|$)/.exec(flat)?.[1] ?? flat;
+  return sentence.length > limit ? `${sentence.slice(0, limit - 1)}…` : sentence;
 }
 
 function missingMacPermissions(status: DriverStatus): string[] {
@@ -145,7 +215,12 @@ function readinessLine(status: DriverStatus | null): string {
     return `Cua Driver readiness on this machine is unknown; call cua_status before the first desktop action. Setup: ${SETTINGS_PATH}`;
   }
   if (!status.installed) return `Cua Driver is NOT installed on this machine. ${INSTALL_INSTRUCTIONS}`;
-  const parts = [`Cua Driver ${status.version ?? "(unknown version)"} is installed.`];
+  const version = status.version ?? "(unknown version)";
+  const parts = [
+    status.version === TESTED_DRIVER_VERSION
+      ? `Cua Driver ${version} is installed (the version this plugin was tested with).`
+      : `Cua Driver ${version} is installed; this plugin was tested with ${TESTED_DRIVER_VERSION}.`,
+  ];
   const missing = missingMacPermissions(status);
   if (missing.length > 0) {
     parts.push(
@@ -153,10 +228,18 @@ function readinessLine(status: DriverStatus | null): string {
     );
   }
   if (status.daemonRunning === false) parts.push("The driver service was not running at last check; the first call starts it on demand.");
-  if (status.updateAvailable === true && status.latestVersion !== null) {
-    parts.push(`Cua Driver ${status.latestVersion} is available; tell the user they can update from ${SETTINGS_PATH} or with \`bb cua update --yes\`.`);
-  }
   return parts.join(" ");
+}
+
+function updateLine(status: DriverStatus): string | null {
+  if (!status.installed) return null;
+  if (status.version !== TESTED_DRIVER_VERSION) {
+    return `Install the tested version with \`bb cua update --yes\`, or keep this one.`;
+  }
+  if (status.updateAvailable === true && status.latestVersion !== null) {
+    return `Cua Driver ${status.latestVersion} is available but untested with this plugin (\`bb cua update --latest --yes\`).`;
+  }
+  return null;
 }
 
 function setupGuidance(status: DriverStatus, hostId: string): string | null {
@@ -186,28 +269,21 @@ function toolResultText(result: ToolCallResult): string {
   }
 }
 
+function driftView(report: DriftReport): DriftView {
+  return { ...report, drifted: hasDrift(report), summary: summarizeDrift(report) };
+}
+
 /**
- * What reaches Cua Driver. Meta tools validate their own small schemas; every
- * upstream tool forwards the agent's object untouched (minus arguments the
- * plugin owns), so Cua Driver is the single validator of its own API.
+ * What reaches Cua Driver for a driver tool: the agent's object untouched,
+ * minus arguments the plugin owns. Cua Driver is the only validator of its API.
  */
 export function forwardableArguments(
-  entry: CatalogEntry,
+  toolName: string,
   raw: unknown,
 ): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
-  if (entry.parameters !== null) {
-    const parsed = entry.parameters.safeParse(raw ?? {});
-    if (!parsed.success) {
-      return {
-        ok: false,
-        error: `Invalid arguments for ${entry.name}: ${parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ")}`,
-      };
-    }
-    return { ok: true, value: parsed.data as Record<string, unknown> };
-  }
   if (raw === undefined || raw === null) return { ok: true, value: {} };
   if (typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, error: `Arguments for ${entry.name} must be a JSON object.` };
+    return { ok: false, error: `Arguments for ${toolName} must be a JSON object.` };
   }
   const value: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
   for (const key of PLUGIN_MANAGED_ARGUMENTS) delete value[key];
@@ -246,26 +322,20 @@ export default async function plugin(bb: BbPluginApi) {
     browserTools: {
       type: "boolean",
       label: "Browser tools",
-      description: "Expose typed Chrome, Edge, and Electron page tools (get_browser_state, browser_click, browser_type, ...).",
+      description: "Offer Cua Driver's browser tools (get_browser_state, browser_click, browser_type, ...). Off turns the whole group off, cua_call included.",
       default: true,
     },
     clipboardTools: {
       type: "boolean",
       label: "Clipboard tools",
-      description: "Expose clipboard_read and clipboard_write.",
-      default: true,
-    },
-    passthroughTools: {
-      type: "boolean",
-      label: "Passthrough tools",
-      description: "Expose cua_call and cua_describe so agents can reach every upstream tool, including recording and cursor themes.",
+      description: "Offer clipboard_read and clipboard_write. Off turns them off, cua_call included.",
       default: true,
     },
     signedInBrowserProfiles: {
       type: "boolean",
       label: "Signed-in browser profiles",
       description:
-        "Let browser tools attach to an existing, signed-in Chrome or Edge window. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
+        "Let browser tools attach to an existing, signed-in Chrome, Edge, or Brave window. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
       default: false,
     },
     sessionPrefix: {
@@ -280,7 +350,6 @@ export default async function plugin(bb: BbPluginApi) {
     mode: string;
     browserTools: boolean;
     clipboardTools: boolean;
-    passthroughTools: boolean;
     signedInBrowserProfiles: boolean;
     sessionPrefix: string;
   }): SettingsSnapshot {
@@ -288,7 +357,6 @@ export default async function plugin(bb: BbPluginApi) {
       mode: ROUTING_MODES.includes(values.mode as RoutingMode) ? (values.mode as RoutingMode) : DEFAULT_POLICY.mode,
       browserTools: values.browserTools,
       clipboardTools: values.clipboardTools,
-      passthroughTools: values.passthroughTools,
       signedInBrowserProfiles: values.signedInBrowserProfiles,
       sessionPrefix: values.sessionPrefix.trim().length > 0 ? values.sessionPrefix.trim() : "bb",
     };
@@ -304,18 +372,34 @@ export default async function plugin(bb: BbPluginApi) {
     mode: snapshot.mode,
     overrides: await bb.storage.kv.get<unknown>(OVERRIDES_KEY),
   }).overrides;
+  let exposureOverrides = normalizeOverrides(await bb.storage.kv.get<unknown>(EXPOSURE_KEY));
   const statusCache = new Map<string, DriverStatus>();
   const statusRefreshedAt = new Map<string, number>();
   const installByHost = new Map<string, InstallState>();
   const hostByThread = new Map<string, string>();
   const activeSessions = new Map<string, { hostId: string; label: string }>();
+  /** Each machine's own catalog, once read; machines not read yet use the bundled snapshot. */
+  const hostCatalogs = new Map<string, IndexedCatalog>();
+  /** The last raw tools/list per machine, for full descriptions in cua_describe. */
+  const rawTools = new Map<string, Map<string, CatalogTool>>();
+  const catalogReads = new Map<string, Promise<IndexedCatalog>>();
+  const registered = new Set<string>();
   const sessionEpoch = Date.now().toString(36);
   let sessionCounter = 0;
-  /** tools/list as each machine reported it, keyed by host, for per-session schemas. */
-  const liveSchemas = new Map<string, { version: string | null; schemas: Map<string, Record<string, unknown>> }>();
 
   function grants(): DriverGrant[] {
     return snapshot.signedInBrowserProfiles ? ["existing-profile"] : [];
+  }
+
+  function enabledGroups(): Set<ToolGroup> {
+    const groups = new Set<ToolGroup>(["desktop"]);
+    if (snapshot.browserTools) groups.add("browser");
+    if (snapshot.clipboardTools) groups.add("clipboard");
+    return groups;
+  }
+
+  function exposureInputs(): ExposureInputs {
+    return { overrides: exposureOverrides, enabledGroups: enabledGroups() };
   }
 
   /** A dropped connection ended every session it carried; mint new labels next time. */
@@ -325,27 +409,105 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  function rememberSchemas(hostId: string, tools: ReadonlyArray<{ name: string; inputSchema: Record<string, unknown> }>): void {
-    liveSchemas.set(hostId, {
-      version: statusCache.get(hostId)?.version ?? null,
-      schemas: new Map(
-        tools.flatMap((tool) => {
-          const schema = overridableSchema(tool.inputSchema);
-          return schema === null ? [] : [[tool.name, schema] as const];
-        }),
-      ),
-    });
+  function failure(text: string): ToolCallResult {
+    return { content: [{ type: "text", text }], isError: true };
   }
 
-  async function listHostTools(hostId: string, signal?: AbortSignal) {
-    const result = await host.call("listTools", { grants: grants() }, { hostId, ...(signal ? { signal } : {}) });
-    rememberSchemas(hostId, result.tools);
-    return result;
+  function catalogFor(hostId: string): IndexedCatalog {
+    return hostCatalogs.get(hostId) ?? SNAPSHOT_INDEX;
+  }
+
+  /** True when the machine runs a driver whose tool list the plugin has not read. */
+  function catalogIsStale(hostId: string): boolean {
+    const status = statusCache.get(hostId);
+    if (status === undefined || !status.installed) return false;
+    const own = hostCatalogs.get(hostId);
+    return own === undefined || (status.version !== null && own.catalog.driverVersion !== status.version);
+  }
+
+  /**
+   * Registers `cua_<name>` for a driver tool. Registration is cheap and does
+   * not reach any prompt: configure() decides per session which tools to
+   * offer and hands each one that machine's exact schema.
+   */
+  function registerDriverTool(tool: DriverTool): void {
+    if (isManaged(tool.name)) return;
+    const name = agentToolName(tool.name);
+    if (registered.has(name) || !AGENT_TOOL_NAME.test(name)) return;
+    const presentation = presentationFor(tool.name, tool);
+    try {
+      bb.agents.registerTool({
+        name,
+        description: presentation.description,
+        parameters: PERMISSIVE_SCHEMA,
+        presentation: { label: presentation.labels },
+        execute: (rawArgs, context) => runDriverTool(tool.name, rawArgs, context, "tool"),
+      });
+      registered.add(name);
+    } catch (error) {
+      bb.log.warn(`could not register ${name}: ${errorMessage(error)}`);
+    }
+  }
+
+  async function storeCatalog(hostId: string, catalog: DriverCatalog): Promise<IndexedCatalog> {
+    const indexed = indexCatalog(catalog, true);
+    const previous = hostCatalogs.get(hostId);
+    hostCatalogs.set(hostId, indexed);
+    for (const tool of catalog.tools) registerDriverTool(tool);
+    const bytes = new TextEncoder().encode(JSON.stringify(catalog)).byteLength;
+    if (bytes <= KV_VALUE_MAX_BYTES) {
+      await bb.storage.kv.set(`${CATALOG_KEY_PREFIX}${hostId}`, catalog);
+    } else {
+      bb.log.warn(`catalog for ${hostId} is ${bytes} bytes, over the kv limit; keeping it in memory only`);
+    }
+    if (previous?.catalog.driverVersion !== catalog.driverVersion && indexed.drift !== null) {
+      const log = hasDrift(indexed.drift) ? bb.log.info : bb.log.debug;
+      log(`host ${hostId}: ${summarizeDrift(indexed.drift)}`);
+    }
+    bb.realtime.publish(REALTIME_CHANNEL, { reason: "catalog", hostId });
+    return indexed;
+  }
+
+  /** Reads a machine's tools/list and keeps it as that machine's catalog. Concurrent calls share one read. */
+  function readCatalog(hostId: string): Promise<IndexedCatalog> {
+    const pending = catalogReads.get(hostId);
+    if (pending !== undefined) return pending;
+    const read = (async () => {
+      const result = await host.call("listTools", { grants: grants() }, { hostId });
+      rawTools.set(hostId, new Map(result.tools.map((tool) => [tool.name, tool])));
+      return storeCatalog(hostId, {
+        driverVersion: result.driverVersion ?? statusCache.get(hostId)?.version ?? null,
+        tools: normalizeDriverTools(result.tools),
+      });
+    })().finally(() => catalogReads.delete(hostId));
+    catalogReads.set(hostId, read);
+    return read;
+  }
+
+  function readCatalogIfStale(hostId: string): void {
+    if (!catalogIsStale(hostId) || catalogReads.has(hostId)) return;
+    void readCatalog(hostId).catch((error: unknown) =>
+      bb.log.debug(`reading tools/list from ${hostId} failed: ${errorMessage(error)}`),
+    );
   }
 
   for (const key of await bb.storage.kv.list(STATUS_KEY_PREFIX)) {
     const parsed = driverStatusSchema.safeParse(await bb.storage.kv.get<unknown>(key));
     if (parsed.success) statusCache.set(key.slice(STATUS_KEY_PREFIX.length), parsed.data);
+  }
+  for (const key of await bb.storage.kv.list(CATALOG_KEY_PREFIX)) {
+    const stored = await bb.storage.kv.get<{ driverVersion?: unknown; tools?: unknown }>(key);
+    if (stored === null || stored === undefined || !Array.isArray(stored.tools)) continue;
+    hostCatalogs.set(
+      key.slice(CATALOG_KEY_PREFIX.length),
+      indexCatalog(
+        {
+          driverVersion: typeof stored.driverVersion === "string" ? stored.driverVersion : null,
+          tools: normalizeDriverTools(stored.tools),
+        },
+        true,
+      ),
+    );
   }
 
   const host = bb.hosts.experimental_client({ contract: hostContract, experimental_signals: hostSignals });
@@ -392,25 +554,13 @@ export default async function plugin(bb: BbPluginApi) {
     return { mode: snapshot.mode, overrides };
   }
 
-  function enabledGroups(): Set<ToolGroup> {
-    const groups = new Set<ToolGroup>(["desktop"]);
-    if (snapshot.browserTools) groups.add("browser");
-    if (snapshot.clipboardTools) groups.add("clipboard");
-    if (snapshot.passthroughTools) groups.add("meta");
-    return groups;
-  }
-
-  function enabledToolNames(): string[] {
-    const names = toolNamesForGroups(enabledGroups());
-    return snapshot.passthroughTools ? names : [...names, "cua_status"];
-  }
-
   async function refreshStatus(hostId: string, probeDaemon: boolean, signal?: AbortSignal): Promise<DriverStatus> {
     const status = await host.call("status", { probeDaemon }, { hostId, ...(signal ? { signal } : {}) });
     statusCache.set(hostId, status);
     statusRefreshedAt.set(hostId, Date.now());
     await bb.storage.kv.set(`${STATUS_KEY_PREFIX}${hostId}`, status);
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "status", hostId });
+    readCatalogIfStale(hostId);
     return status;
   }
 
@@ -467,10 +617,6 @@ export default async function plugin(bb: BbPluginApi) {
     return send(sessionFor(options.threadId, hostId));
   }
 
-  function failure(text: string): ToolCallResult {
-    return { content: [{ type: "text", text }], isError: true };
-  }
-
   async function statusForTool(hostId: string, signal?: AbortSignal): Promise<DriverStatus> {
     const cached = statusCache.get(hostId);
     const refreshedAt = statusRefreshedAt.get(hostId);
@@ -478,12 +624,30 @@ export default async function plugin(bb: BbPluginApi) {
     return refreshStatus(hostId, true, signal);
   }
 
+  /** Why a tool that is turned off is refused, and what the agent should do instead. */
+  function offMessage(driverName: string): string {
+    const group = groupOf(driverName);
+    if (!enabledGroups().has(group)) {
+      return `${driverName} belongs to the ${group} tools, which are turned off in Computer Use settings. Do not reach the same capability another way; if the task needs it, ask the user to turn on **${group === "browser" ? "Browser tools" : "Clipboard tools"}** in [Computer Use settings](${SETTINGS_PATH}).`;
+    }
+    return `${driverName} is turned off for agents in Computer Use settings. Do not reach the same capability another way; if the task needs it, ask the user to allow it under **Tools** in [Computer Use settings](${SETTINGS_PATH}) or with \`bb cua expose ${driverName} call\`.`;
+  }
+
+  /**
+   * Every driver call goes through here: dedicated tools, cua_call, and
+   * `bb cua call` share one exposure gate.
+   */
   async function callConfiguredDriver(
     hostId: string,
     name: string,
     args: Record<string, unknown>,
     options: { threadId?: string; signal?: AbortSignal },
   ): Promise<ToolCallResult> {
+    if (isManaged(name)) {
+      return failure(`${name} is managed by the Computer Use plugin: every thread gets its own Cua session automatically.`);
+    }
+    const known = catalogFor(hostId).byName.get(name);
+    if (known !== undefined && resolveExposure(name, known, exposureInputs()) === "off") return failure(offMessage(name));
     if (!snapshot.signedInBrowserProfiles && requestsExistingProfile(name, args)) {
       return failure(
         `Attaching to a signed-in browser profile is turned off. Ask the user to turn on **Signed-in browser profiles** in [Computer Use settings](${SETTINGS_PATH}) if they want this, or work in a separate browser.`,
@@ -492,6 +656,14 @@ export default async function plugin(bb: BbPluginApi) {
     const status = await statusForTool(hostId, options.signal);
     const guidance = setupGuidance(status, hostId);
     if (guidance !== null) return failure(guidance);
+    if (known === undefined) {
+      // The driver may have changed since its tools were last read.
+      const tool = (await readCatalog(hostId).catch(() => null))?.byName.get(name);
+      if (tool === undefined) {
+        return failure(`Cua Driver on this machine has no tool named ${name}. cua_describe lists the tools it has.`);
+      }
+      if (resolveExposure(name, tool, exposureInputs()) === "off") return failure(offMessage(name));
+    }
 
     const result = await callDriver(hostId, name, args, options);
     if (!isPermissionFailure(result)) return result;
@@ -507,13 +679,11 @@ export default async function plugin(bb: BbPluginApi) {
     return failure(`${recovery}\n\nDriver detail: ${toolResultText(result).trim().slice(0, 500)}`);
   }
 
-  async function executeCatalogTool(
+  async function withHost(
     toolName: string,
-    args: Record<string, unknown>,
-    context: { threadId: string; signal: AbortSignal },
+    context: { threadId: string },
+    run: (hostId: string) => Promise<ToolCallResult>,
   ): Promise<ToolCallResult> {
-    const entry = CATALOG_BY_NAME.get(toolName);
-    if (entry === undefined) return failure(`Unknown tool ${toolName}.`);
     let hostId: string;
     try {
       hostId = await resolveHostId(context.threadId);
@@ -521,38 +691,7 @@ export default async function plugin(bb: BbPluginApi) {
       return failure(errorMessage(error));
     }
     try {
-      if (entry.name === "cua_status") {
-        const status = await refreshStatus(hostId, true, context.signal);
-        return { content: [{ type: "text", text: `${readinessLine(status)}\n\n${JSON.stringify(status, null, 2)}` }], isError: false };
-      }
-      if (entry.name === "cua_describe") {
-        const { tools } = await listHostTools(hostId, context.signal);
-        const wanted = typeof args.tool === "string" ? args.tool : null;
-        if (wanted === null) {
-          return {
-            content: [{ type: "text", text: tools.map((tool) => `${tool.name}: ${tool.description.split("\n")[0] ?? ""}`).join("\n") }],
-            isError: false,
-          };
-        }
-        const found = tools.find((tool) => tool.name === wanted);
-        if (found === undefined) return failure(`Cua Driver has no tool named ${wanted}.`);
-        return { content: [{ type: "text", text: JSON.stringify(found, null, 2) }], isError: false };
-      }
-      if (entry.name === "cua_call") {
-        const upstream = typeof args.tool === "string" ? args.tool : "";
-        const forwarded =
-          typeof args.arguments === "object" && args.arguments !== null ? (args.arguments as Record<string, unknown>) : {};
-        return await callConfiguredDriver(hostId, upstream, forwarded, context);
-      }
-      if (entry.upstream === null) return failure(`Tool ${toolName} has no upstream mapping.`);
-      const result = await callConfiguredDriver(hostId, entry.upstream, args, context);
-      const version = statusCache.get(hostId)?.version ?? null;
-      if (version !== null && version !== UPSTREAM_DRIVER_VERSION && liveSchemas.get(hostId)?.version !== version) {
-        void listHostTools(hostId).catch((error: unknown) =>
-          bb.log.debug(`reading tools/list from ${hostId} failed: ${errorMessage(error)}`),
-        );
-      }
-      return result;
+      return await run(hostId);
     } catch (error) {
       const message = errorMessage(error);
       bb.log.warn(`${toolName} failed on host ${hostId}: ${message}`);
@@ -562,57 +701,198 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  for (const entry of CATALOG) {
-    bb.agents.registerTool({
-      name: entry.name,
-      description: entry.description,
-      parameters: entry.inputSchema,
-      presentation: { label: entry.labels },
-      async execute(rawArgs, context) {
-        const args = forwardableArguments(entry, rawArgs);
-        if (!args.ok) return failure(args.error);
-        return executeCatalogTool(entry.name, args.value, context);
-      },
-    });
+  function runDriverTool(
+    driverName: string,
+    rawArgs: unknown,
+    context: { threadId: string; signal: AbortSignal },
+    via: "tool" | "call",
+  ): Promise<ToolCallResult> {
+    const args = forwardableArguments(via === "tool" ? agentToolName(driverName) : driverName, rawArgs);
+    if (!args.ok) return Promise.resolve(failure(args.error));
+    return withHost(agentToolName(driverName), context, (hostId) =>
+      callConfiguredDriver(hostId, driverName, args.value, context),
+    );
   }
 
-  /**
-   * The schema a provider sees for one tool on one machine: the bundled
-   * snapshot while the machine runs the version it was taken from, otherwise
-   * that machine's own tools/list once it has been read.
-   */
-  function toolSelection(name: string, hostId: string): string | { name: string; parameters: Record<string, unknown> } {
-    const entry = CATALOG_BY_NAME.get(name);
-    if (entry === undefined || entry.upstream === null) return name;
-    const version = statusCache.get(hostId)?.version ?? null;
-    if (version === null || version === UPSTREAM_DRIVER_VERSION) return name;
-    const live = liveSchemas.get(hostId);
-    const schema = live?.version === version ? live.schemas.get(entry.upstream) : undefined;
-    return schema === undefined ? name : { name, parameters: schema };
+  function describeCatalog(hostId: string): string {
+    const indexed = catalogFor(hostId);
+    const inputs = exposureInputs();
+    const buckets: Record<Exposure, string[]> = { tool: [], call: [], off: [] };
+    for (const tool of indexed.catalog.tools) {
+      if (isManaged(tool.name)) continue;
+      const exposure = resolveExposure(tool.name, tool, inputs);
+      const name = exposure === "tool" ? agentToolName(tool.name) : tool.name;
+      buckets[exposure].push(`- ${name}: ${firstSentence(presentationFor(tool.name, tool).description)}`);
+    }
+    const lines: string[] = [];
+    if (indexed.drift === null) {
+      lines.push(`This machine's own tool list has not been read yet; showing the tested Cua Driver ${TESTED_DRIVER_VERSION}.`);
+    } else if (hasDrift(indexed.drift)) {
+      lines.push(summarizeDrift(indexed.drift));
+    }
+    lines.push("", "Dedicated tools (call them directly):", ...buckets.tool);
+    lines.push("", "Through cua_call {tool, arguments}:", ...(buckets.call.length > 0 ? buckets.call : ["(none)"]));
+    lines.push(
+      "",
+      "Turned off by the user (refused; ask the user if a task needs one):",
+      ...(buckets.off.length > 0 ? buckets.off : ["(none)"]),
+      "",
+      "cua_describe {tool} returns one tool's full description and input schema.",
+    );
+    return lines.join("\n").trim();
+  }
+
+  async function describeTool(hostId: string, requested: string): Promise<ToolCallResult> {
+    const driverName = driverToolName(requested);
+    if (!rawTools.get(hostId)?.has(driverName)) await readCatalog(hostId).catch(() => null);
+    const raw = rawTools.get(hostId)?.get(driverName);
+    const tool = catalogFor(hostId).byName.get(driverName);
+    if (raw === undefined && tool === undefined) return failure(`Cua Driver on this machine has no tool named ${driverName}.`);
+    const exposure = isManaged(driverName) ? "managed by the plugin" : resolveExposure(driverName, tool, exposureInputs());
+    const reach =
+      exposure === "tool"
+        ? `Call it as ${agentToolName(driverName)}.`
+        : exposure === "call"
+          ? `Call it through cua_call {tool: "${driverName}", arguments: {...}}.`
+          : exposure === "off"
+            ? "It is turned off for agents; ask the user if the task needs it."
+            : "The plugin supplies session arguments itself; do not call it.";
+    const schema = raw?.inputSchema ?? tool?.inputSchema ?? {};
+    const description = raw?.description ?? tool?.description ?? "";
+    return {
+      content: [
+        {
+          type: "text",
+          text: [
+            `${driverName} (${reach})`,
+            "",
+            description.trim(),
+            "",
+            "Input schema (the plugin supplies `session`):",
+            JSON.stringify(schema, null, 2),
+          ].join("\n"),
+        },
+      ],
+      isError: false,
+    };
+  }
+
+  function statusReport(hostId: string, status: DriverStatus): string {
+    const lines = [readinessLine(status)];
+    const update = updateLine(status);
+    if (update !== null) lines.push(update);
+    const drift = hostCatalogs.get(hostId)?.drift;
+    if (drift !== undefined && drift !== null && hasDrift(drift)) lines.push(formatDrift(drift));
+    return lines.join("\n");
+  }
+
+  const metaHandlers: Record<string, (args: Record<string, unknown>, context: { threadId: string; signal: AbortSignal }) => Promise<ToolCallResult>> = {
+    cua_call: (args, context) => {
+      const driverName = driverToolName(typeof args.tool === "string" ? args.tool : "");
+      return runDriverTool(driverName, args.arguments ?? {}, context, "call");
+    },
+    cua_describe: (args, context) =>
+      withHost("cua_describe", context, async (hostId) => {
+        if (typeof args.tool === "string") return describeTool(hostId, args.tool);
+        if (catalogIsStale(hostId) || !hostCatalogs.has(hostId)) await readCatalog(hostId).catch(() => null);
+        return { content: [{ type: "text", text: describeCatalog(hostId) }], isError: false };
+      }),
+    cua_status: (_args, context) =>
+      withHost("cua_status", context, async (hostId) => {
+        const status = await refreshStatus(hostId, true, context.signal);
+        if (catalogIsStale(hostId)) await readCatalog(hostId).catch(() => null);
+        return {
+          content: [{ type: "text", text: `${statusReport(hostId, status)}\n\n${JSON.stringify(status, null, 2)}` }],
+          isError: false,
+        };
+      }),
+  };
+
+  for (const meta of META_TOOLS) {
+    const handler = metaHandlers[meta.name];
+    if (handler === undefined) continue;
+    bb.agents.registerTool({
+      name: meta.name,
+      description: meta.description,
+      parameters: meta.parameters,
+      presentation: { label: meta.labels },
+      execute: (args, context) => handler(args as Record<string, unknown>, context),
+    });
+    registered.add(meta.name);
+  }
+  for (const tool of SNAPSHOT_CATALOG.tools) registerDriverTool(tool);
+  for (const indexed of hostCatalogs.values()) for (const tool of indexed.catalog.tools) registerDriverTool(tool);
+
+  /** Dedicated tools for one machine, each with that machine's own schema. */
+  function dedicatedSelections(hostId: string): Array<{ name: string; parameters: Record<string, unknown> }> {
+    const inputs = exposureInputs();
+    const selections: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+    for (const tool of catalogFor(hostId).catalog.tools) {
+      if (resolveExposure(tool.name, tool, inputs) !== "tool") continue;
+      const name = agentToolName(tool.name);
+      if (!registered.has(name)) continue;
+      selections.push({ name, parameters: overridableSchema(tool.inputSchema) ?? PERMISSIVE_SCHEMA });
+    }
+    return selections.slice(0, SELECTION_MAX_IDS - META_TOOLS.length);
   }
 
   bb.agents.configure((context) => {
     const decision = resolveProviderDecision(policy(), context.provider.id);
     if (decision !== "cua") return { tools: [], skills: [] };
-    const status = statusCache.get(context.host.id) ?? null;
+    const hostId = context.host.id;
+    const status = statusCache.get(hostId) ?? null;
+    readCatalogIfStale(hostId);
+    const drift = hostCatalogs.get(hostId)?.drift ?? null;
+    const instructions = [
+      `Cua Driver computer use is available on ${context.host.name} through the cua_* tools.`,
+      readinessLine(status),
+    ];
+    if (drift !== null && hasDrift(drift)) {
+      instructions.push(`${summarizeDrift(drift)} New tools that are not read-only stay off until the user allows them.`);
+    }
+    instructions.push(
+      "Some driver tools have no dedicated cua_* tool and are reached through cua_call; cua_describe lists every tool and how to reach it.",
+      "A tool refused as turned off was disabled by the user: do not reach the same capability another way (a shell, AppleScript, another tool); ask the user.",
+      `If a tool reports that setup is required, stop and give the user its ${SETTINGS_PATH} link instead of retrying.`,
+      "Follow the cua-computer-use skill: snapshot with cua_get_window_state before element actions, act with cua_run_steps, and verify afterwards.",
+    );
     return {
-      tools: enabledToolNames().map((name) => toolSelection(name, context.host.id)),
+      tools: [...META_TOOLS.map((meta) => meta.name), ...dedicatedSelections(hostId)],
       skills: [SKILL_NAME],
-      instructions: [
-        `Cua Driver computer use is available on ${context.host.name} through the cua_* tools.`,
-        readinessLine(status),
-        `If a tool reports that setup is required, stop and give the user its ${SETTINGS_PATH} link instead of retrying.`,
-        "Follow the cua-computer-use skill: snapshot with cua_get_window_state before every element action and verify afterwards.",
-      ].join("\n"),
+      instructions: instructions.join("\n"),
     };
   });
+
+  function toolViews(): ToolView[] {
+    const known = new Map(SNAPSHOT_CATALOG.tools.map((tool) => [tool.name, tool]));
+    for (const indexed of hostCatalogs.values()) for (const tool of indexed.catalog.tools) known.set(tool.name, tool);
+    const inputs = exposureInputs();
+    const views: ToolView[] = [];
+    for (const [name, tool] of known) {
+      if (isManaged(name)) continue;
+      const fallback = defaultExposure(name, tool);
+      views.push({
+        name,
+        group: groupOf(name),
+        exposure: resolveExposure(name, tool, inputs),
+        defaultExposure: fallback.exposure,
+        source: fallback.source === "unreviewed" ? "unreviewed" : "reviewed",
+        override: exposureOverrides[name] ?? null,
+        groupEnabled: inputs.enabledGroups.has(groupOf(name)),
+        readOnly: tool.annotations.readOnlyHint === true,
+        summary: firstSentence(presentationFor(name, tool).description),
+      });
+    }
+    return views.sort((a, b) => a.name.localeCompare(b.name));
+  }
 
   async function buildState(): Promise<State> {
     const current = policy();
     const [providers, hosts] = await Promise.all([bb.sdk.providers.list(), bb.sdk.hosts.list()]);
     return {
       mode: current.mode,
-      groups: { browser: snapshot.browserTools, clipboard: snapshot.clipboardTools, passthrough: snapshot.passthroughTools },
+      groups: { browser: snapshot.browserTools, clipboard: snapshot.clipboardTools },
+      testedVersion: TESTED_DRIVER_VERSION,
       providers: providers.map((provider) => {
         const decision = resolveProviderDecision(current, provider.id);
         return {
@@ -625,14 +905,18 @@ export default async function plugin(bb: BbPluginApi) {
           decisionLabel: describeDecision(decision),
         };
       }),
-      hosts: hosts.map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        status: entry.status === "connected" ? "connected" : "disconnected",
-        driver: statusCache.get(entry.id) ?? null,
-        install: installByHost.get(entry.id) ?? IDLE_INSTALL_STATE,
-      })),
-      toolNames: enabledToolNames(),
+      hosts: hosts.map((entry) => {
+        const drift = hostCatalogs.get(entry.id)?.drift ?? null;
+        return {
+          id: entry.id,
+          name: entry.name,
+          status: entry.status === "connected" ? "connected" : "disconnected",
+          driver: statusCache.get(entry.id) ?? null,
+          install: installByHost.get(entry.id) ?? IDLE_INSTALL_STATE,
+          drift: drift === null ? null : driftView(drift),
+        };
+      }),
+      tools: toolViews(),
     };
   }
 
@@ -645,10 +929,33 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "policy" });
   }
 
+  async function saveExposure(tool: string, exposure: Exposure | "default"): Promise<void> {
+    const name = driverToolName(tool);
+    if (isManaged(name)) throw new Error(`${name} is managed by the plugin and cannot be exposed.`);
+    const next = { ...exposureOverrides };
+    if (exposure === "default") delete next[name];
+    else next[name] = exposure;
+    exposureOverrides = normalizeOverrides(next);
+    await bb.storage.kv.set(EXPOSURE_KEY, exposureOverrides);
+    bb.log.info(`tool exposure: ${name} → ${exposure}`);
+    bb.realtime.publish(REALTIME_CHANNEL, { reason: "exposure" });
+  }
+
   async function saveMode(mode: RoutingMode): Promise<void> {
     await bb.sdk.plugins.updateSettings({ pluginId: bb.pluginId, values: { mode } });
     snapshot = { ...snapshot, mode };
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "policy" });
+  }
+
+  /** Status, then the machine's tool list when its driver version changed. */
+  async function refreshHost(hostId: string): Promise<DriverStatus> {
+    const status = await refreshStatus(hostId, true);
+    if (catalogIsStale(hostId)) {
+      await readCatalog(hostId).catch((error: unknown) =>
+        bb.log.debug(`reading tools/list from ${hostId} failed: ${errorMessage(error)}`),
+      );
+    }
+    return status;
   }
 
   bb.rpc.register(rpcContract, {
@@ -661,19 +968,24 @@ export default async function plugin(bb: BbPluginApi) {
       await saveOverride(providerId, override);
       return buildState();
     },
-    refreshStatus: ({ hostId }) => refreshStatus(hostId, true),
-    async listTools({ hostId }) {
-      return listHostTools(hostId);
+    async setExposure({ tool, exposure }) {
+      await saveExposure(tool, exposure);
+      return buildState();
     },
-    installDriver: ({ hostId }) => startInstall(hostId),
+    refreshStatus: ({ hostId }) => refreshHost(hostId),
+    async listTools({ hostId }) {
+      await readCatalog(hostId);
+      return { tools: [...(rawTools.get(hostId)?.values() ?? [])] };
+    },
+    installDriver: ({ hostId, target }) => startInstall(hostId, target === "tested" ? TESTED_DRIVER_VERSION : null),
     installState: ({ hostId }) => readInstallState(hostId),
     grantPermissions: ({ hostId }) => grantPermissions(hostId),
   });
 
-  async function startInstall(hostId: string): Promise<InstallState> {
-    const state = await host.call("install", null, { hostId });
+  async function startInstall(hostId: string, version: string | null): Promise<InstallState> {
+    const state = await host.call("install", { version }, { hostId });
     installByHost.set(hostId, state);
-    bb.log.info(`Cua Driver install started on host ${hostId} (user-initiated)`);
+    bb.log.info(`Cua Driver install of ${version ?? "the newest release"} started on host ${hostId} (user-initiated)`);
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "install", hostId });
     return state;
   }
@@ -696,37 +1008,42 @@ export default async function plugin(bb: BbPluginApi) {
 
   const USAGE = [
     "Usage:",
-    "  bb cua status [--host <id>] [--json]        Driver readiness on a machine",
+    "  bb cua status [--host <id>] [--json]          Driver readiness, tested version, and drift",
+    "  bb cua drift [--host <id>] [--json]           Re-read the machine's tools and compare them with the tested driver",
+    "  bb cua tools [--host <id>] [--json]           Every driver tool and how agents reach it",
+    "  bb cua expose <tool> <tool|call|off|default>  Change how agents reach one tool",
+    "  bb cua call <tool> [<json-args>] [--host <id>]",
     "  bb cua policy [<providerId> <cua|native|off|inherit>] [--json]",
     "  bb cua mode <prefer-native|cua-everywhere|off>",
-    "  bb cua tools [--host <id>]                   Upstream tool catalog",
-    "  bb cua call <tool> [<json-args>] [--host <id>]",
-    "  bb cua install --yes [--host <id>]           Run Cua's official installer on a machine",
-    "  bb cua update --yes [--host <id>]            Update Cua Driver to the newest release on its channel",
-    "  bb cua grant [--host <id>]                   Request macOS Accessibility + Screen Recording",
+    `  bb cua install --yes [--latest] [--host <id>] Install Cua Driver ${TESTED_DRIVER_VERSION} (or the newest release)`,
+    `  bb cua update --yes [--latest] [--host <id>]  Move to Cua Driver ${TESTED_DRIVER_VERSION} (or the newest release)`,
+    "  bb cua grant [--host <id>]                    Request macOS Accessibility + Screen Recording",
   ].join("\n");
 
   bb.cli.register({
     name: "cua",
-    summary: "Cua Driver computer use: readiness, routing policy, and raw tool calls",
+    summary: "Cua Driver computer use: readiness, tool exposure, routing policy, and raw tool calls",
     commands: [
-      { name: "status", summary: "Show Cua Driver readiness for a machine", usage: "bb cua status [--host <id>] [--json]" },
+      { name: "status", summary: "Show Cua Driver readiness, tested version, and drift for a machine", usage: "bb cua status [--host <id>] [--json]" },
+      { name: "drift", summary: "Compare a machine's driver tools with the version this plugin was tested with", usage: "bb cua drift [--host <id>] [--json]" },
+      { name: "tools", summary: "List every Cua Driver tool and how agents reach it", usage: "bb cua tools [--host <id>] [--json]" },
+      { name: "expose", summary: "Offer a tool as a dedicated tool, through cua_call, or not at all", usage: "bb cua expose <tool> <tool|call|off|default>" },
+      { name: "call", summary: "Call a Cua Driver tool with JSON arguments (same exposure rules as agents)", usage: "bb cua call <tool> [<json-args>] [--host <id>]" },
       { name: "policy", summary: "Show or set per-provider routing overrides", usage: "bb cua policy [<providerId> <cua|native|off|inherit>] [--json]" },
       { name: "mode", summary: "Set the routing mode", usage: "bb cua mode <prefer-native|cua-everywhere|off>" },
-      { name: "tools", summary: "List the upstream Cua Driver tool catalog", usage: "bb cua tools [--host <id>]" },
-      { name: "call", summary: "Call any Cua Driver tool with JSON arguments", usage: "bb cua call <tool> [<json-args>] [--host <id>]" },
-      { name: "install", summary: "Run Cua's official installer on a machine (requires --yes)", usage: "bb cua install --yes [--host <id>]" },
-      { name: "update", summary: "Update Cua Driver to the newest release on its channel (requires --yes)", usage: "bb cua update --yes [--host <id>]" },
+      { name: "install", summary: `Install Cua Driver ${TESTED_DRIVER_VERSION} with Cua's official installer (requires --yes)`, usage: "bb cua install --yes [--latest] [--host <id>]" },
+      { name: "update", summary: `Move Cua Driver to ${TESTED_DRIVER_VERSION}, or the newest release with --latest (requires --yes)`, usage: "bb cua update --yes [--latest] [--host <id>]" },
       { name: "grant", summary: "Request macOS Accessibility and Screen Recording for CuaDriver.app", usage: "bb cua grant [--host <id>]" },
     ],
     async run(argv, ctx) {
+      const flags = new Set(["--json", "--yes", "--latest"]);
       const json = argv.includes("--json");
       const yes = argv.includes("--yes");
+      const latest = argv.includes("--latest");
       const hostFlag = argv.indexOf("--host");
       const explicitHost = hostFlag >= 0 ? argv[hostFlag + 1] : undefined;
       const args = argv.filter(
-        (arg, index) =>
-          arg !== "--json" && arg !== "--yes" && arg !== "--host" && (hostFlag < 0 || index !== hostFlag + 1),
+        (arg, index) => !flags.has(arg) && arg !== "--host" && (hostFlag < 0 || index !== hostFlag + 1),
       );
       const [command, ...rest] = args;
       async function targetHost(): Promise<string> {
@@ -736,8 +1053,65 @@ export default async function plugin(bb: BbPluginApi) {
       }
       try {
         if (command === "status") {
-          const status = await refreshStatus(await targetHost(), true);
-          return { exitCode: 0, stdout: json ? JSON.stringify(status) : `${readinessLine(status)}\n${JSON.stringify(status, null, 2)}` };
+          const hostId = await targetHost();
+          const status = await refreshHost(hostId);
+          const drift = hostCatalogs.get(hostId)?.drift ?? null;
+          return {
+            exitCode: 0,
+            stdout: json
+              ? JSON.stringify({ status, testedVersion: TESTED_DRIVER_VERSION, drift: drift === null ? null : driftView(drift) })
+              : `${statusReport(hostId, status)}\n${JSON.stringify(status, null, 2)}`,
+          };
+        }
+        if (command === "drift") {
+          const hostId = await targetHost();
+          const status = await refreshStatus(hostId, false);
+          if (!status.installed) return { exitCode: 1, stderr: "Cua Driver is not installed on that machine." };
+          const indexed = await readCatalog(hostId);
+          const report = indexed.drift ?? diffCatalogs(SNAPSHOT_CATALOG, indexed.catalog);
+          return { exitCode: 0, stdout: json ? JSON.stringify(driftView(report)) : formatDrift(report) };
+        }
+        if (command === "tools") {
+          const hostId = await targetHost();
+          if (!hostCatalogs.has(hostId) || catalogIsStale(hostId)) await readCatalog(hostId).catch(() => null);
+          const known = catalogFor(hostId);
+          const inputs = exposureInputs();
+          const rows = known.catalog.tools
+            .filter((tool) => !isManaged(tool.name))
+            .map((tool) => {
+              const fallback = defaultExposure(tool.name, tool);
+              return {
+                name: tool.name,
+                exposure: resolveExposure(tool.name, tool, inputs),
+                overridden: exposureOverrides[tool.name] !== undefined,
+                unreviewed: fallback.source === "unreviewed",
+                group: groupOf(tool.name),
+                summary: firstSentence(presentationFor(tool.name, tool).description, 90),
+              };
+            });
+          if (json) return { exitCode: 0, stdout: JSON.stringify(rows) };
+          const header = known.drift === null
+            ? `Tested catalog (Cua Driver ${TESTED_DRIVER_VERSION}); this machine's own list could not be read.`
+            : `Cua Driver ${known.catalog.driverVersion ?? "(unknown)"} on this machine. * = your override, ? = unreviewed new tool.`;
+          const lines = rows.map(
+            (row) =>
+              `${row.name.padEnd(26)} ${row.exposure.padEnd(4)}${row.overridden ? "*" : row.unreviewed ? "?" : " "} ${row.group.padEnd(9)} ${row.summary}`,
+          );
+          return { exitCode: 0, stdout: [header, "", ...lines].join("\n") };
+        }
+        if (command === "expose") {
+          const [tool, exposure] = rest;
+          if (tool === undefined || exposure === undefined || ![...EXPOSURES, "default"].includes(exposure)) {
+            return { exitCode: 1, stderr: "Usage: bb cua expose <tool> <tool|call|off|default>" };
+          }
+          await saveExposure(tool, exposure as Exposure | "default");
+          const name = driverToolName(tool);
+          const known = toolViews().find((view) => view.name === name);
+          const effective = known?.exposure ?? exposure;
+          return {
+            exitCode: 0,
+            stdout: `${name}: ${effective}${known !== undefined && !known.groupEnabled ? ` (its ${known.group} group is turned off in settings)` : ""}. New agent sessions pick this up.`,
+          };
         }
         if (command === "policy") {
           if (rest.length === 2) {
@@ -763,13 +1137,6 @@ export default async function plugin(bb: BbPluginApi) {
           await saveMode(mode as RoutingMode);
           return { exitCode: 0, stdout: `mode: ${mode}` };
         }
-        if (command === "tools") {
-          const { tools } = await listHostTools(await targetHost());
-          return {
-            exitCode: 0,
-            stdout: json ? JSON.stringify(tools) : tools.map((tool) => `${tool.name}: ${tool.description.split("\n")[0] ?? ""}`).join("\n"),
-          };
-        }
         if (command === "call") {
           const [tool, rawArgs] = rest;
           if (tool === undefined) return { exitCode: 1, stderr: USAGE };
@@ -781,52 +1148,57 @@ export default async function plugin(bb: BbPluginApi) {
             }
             parsed = value as Record<string, unknown>;
           }
+          const forwarded = forwardableArguments(tool, parsed);
+          if (!forwarded.ok) return { exitCode: 1, stderr: forwarded.error };
           const result = await callConfiguredDriver(
             await targetHost(),
-            tool,
-            parsed,
+            driverToolName(tool),
+            forwarded.value,
             ctx.threadId === undefined ? {} : { threadId: ctx.threadId },
           );
           const text = result.content
             .map((part) => (part.type === "text" ? part.text : `[image ${part.mimeType}, ${part.data.length} base64 chars]`))
             .join("\n");
-          return { exitCode: result.isError ? 1 : 0, stdout: json ? JSON.stringify(result) : text };
-        }
-        if (command === "update") {
-          const hostId = await targetHost();
-          const status = await refreshStatus(hostId, true);
-          if (!status.installed) return { exitCode: 1, stderr: "Cua Driver is not installed on that machine; run `bb cua install --yes` first." };
-          if (status.updateAvailable !== true) {
-            return {
-              exitCode: 0,
-              stdout: status.updateAvailable === false
-                ? `Cua Driver ${status.version ?? ""} is already the newest release.`
-                : "Could not check for a newer Cua Driver release; try again later.",
-            };
-          }
-          if (!yes) {
-            return {
-              exitCode: 1,
-              stderr: `This stops Cua Driver ${status.version ?? ""} and runs Cua's official installer to install ${status.latestVersion ?? "the newest release"}. Re-run with --yes to confirm.`,
-            };
-          }
+          // bb caps CLI output at 1 MiB; a screenshot alone can exceed it.
+          const printable = {
+            ...result,
+            content: result.content.map((part) =>
+              part.type === "image" ? { type: "image", mimeType: part.mimeType, base64Chars: part.data.length } : part,
+            ),
+          };
+          return { exitCode: result.isError ? 1 : 0, stdout: json ? JSON.stringify(printable) : text };
         }
         if (command === "install" || command === "update") {
+          const hostId = await targetHost();
+          const target = latest ? null : TESTED_DRIVER_VERSION;
+          const targetLabel = target === null ? "the newest Cua Driver release (untested with this plugin)" : `Cua Driver ${target}`;
+          if (command === "update") {
+            const status = await refreshStatus(hostId, true);
+            if (!status.installed) return { exitCode: 1, stderr: "Cua Driver is not installed on that machine; run `bb cua install --yes` first." };
+            if (target !== null && status.version === target) {
+              return { exitCode: 0, stdout: `Cua Driver ${target} is already installed (the version this plugin was tested with).` };
+            }
+            if (target === null && status.updateAvailable === false) {
+              return { exitCode: 0, stdout: `Cua Driver ${status.version ?? ""} is already the newest release.` };
+            }
+          }
           if (!yes) {
             return {
               exitCode: 1,
-              stderr:
-                "This downloads and runs Cua's official installer (https://cua.ai/driver/install.sh or install.ps1) on the target machine. Re-run with --yes to confirm.",
+              stderr: [
+                `This stops any running Cua Driver and runs Cua's official installer for ${targetLabel} on the target machine.`,
+                target === null ? "" : "Pass --latest for the newest release instead.",
+                "Re-run with --yes to confirm.",
+              ].filter(Boolean).join(" "),
             };
           }
-          const hostId = await targetHost();
-          let state = await startInstall(hostId);
+          let state = await startInstall(hostId, target);
           const deadline = Date.now() + 15 * 60_000;
           while (state.running && Date.now() < deadline) {
             await sleep(2_000);
             state = await readInstallState(hostId);
           }
-          if (!state.running) await refreshStatus(hostId, true).catch(() => null);
+          if (!state.running) await refreshHost(hostId).catch(() => null);
           const summary = state.running
             ? "Installer still running after 15 minutes; check `bb cua status` later."
             : state.ok
@@ -867,6 +1239,23 @@ export default async function plugin(bb: BbPluginApi) {
     endSession(thread.id);
     hostByThread.delete(thread.id);
   });
+
+  // Learn each connected machine's driver version in the background, so a
+  // changed driver is read (and its drift reported) before the next session.
+  void bb.sdk.hosts
+    .list()
+    .then((hosts) =>
+      Promise.all(
+        hosts
+          .filter((entry) => entry.status === "connected")
+          .map((entry) =>
+            refreshStatus(entry.id, false).catch((error: unknown) =>
+              bb.log.debug(`startup status for ${entry.id} failed: ${errorMessage(error)}`),
+            ),
+          ),
+      ),
+    )
+    .catch((error: unknown) => bb.log.debug(`startup host listing failed: ${errorMessage(error)}`));
 
   bb.onDispose(() => {
     activeSessions.clear();

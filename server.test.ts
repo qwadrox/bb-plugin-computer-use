@@ -2,9 +2,14 @@ import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/tes
 import type { PluginAgentToolResult } from "@get-bb/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
 import plugin from "./server.js";
-import type { DriverStatus, ToolCallResult } from "./src/contract.js";
+import type { CatalogTool, DriverStatus, ToolCallResult } from "./src/contract.js";
+import { TESTED_DRIVER_VERSION } from "./src/snapshot.js";
+import testedDriver from "./src/driver-snapshot.json";
 
-function context(providerId: string, hostId = "host_1") {
+/** The tested driver's raw tools/list, as a machine running it reports. */
+const TESTED_TOOLS = testedDriver.tools as unknown as CatalogTool[];
+
+function context(providerId: string, hostId = "host_9") {
   return {
     thread: { id: "thr_1", title: null, parentThreadId: null, sourceThreadId: null },
     project: { id: "proj_1", kind: "standard" as const, name: "demo", gitRemoteUrl: null },
@@ -20,9 +25,9 @@ function structured(result: PluginAgentToolResult): { content: Array<{ type: str
   return result;
 }
 
-interface StateView {
-  providers: Array<{ id: string; decision: string }>;
-  hosts: Array<{ id: string; driver: { installed: boolean } | null }>;
+function text(result: PluginAgentToolResult | ReturnType<typeof structured>): string {
+  const value = typeof result === "string" ? structured(result) : result;
+  return value.content.map((part) => ("text" in part ? (part.text ?? "") : "")).join("\n");
 }
 
 function names(configuration: { tools: Array<{ name: string }> }): string[] {
@@ -34,18 +39,40 @@ function readyStatus(overrides: Partial<DriverStatus> = {}): DriverStatus {
     platform: "darwin",
     installed: true,
     binaryPath: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
-    version: "0.23.2",
+    version: TESTED_DRIVER_VERSION,
     daemonRunning: true,
     permissions: { accessibility: true, screenRecording: true, directCapture: "not_checked" },
     connected: false,
     latestVersion: null,
     updateAvailable: null,
-    toolCount: 56,
+    toolCount: 60,
     error: null,
     checkedAt: new Date().toISOString(),
     ...overrides,
   };
 }
+
+const object = (properties: Record<string, unknown> = {}, required?: string[]) => ({
+  type: "object",
+  properties,
+  ...(required === undefined ? {} : { required }),
+});
+
+/** A small driver whose click gained an argument, plus one new read-only and one new acting tool. */
+const NEWER_DRIVER: CatalogTool[] = [
+  {
+    name: "click",
+    description: "Click an element.\n\nLong detail.",
+    inputSchema: object({ pid: { type: "integer" }, brand_new_arg: { type: "string" }, session: { type: "string" } }, ["pid", "session"]),
+    annotations: { readOnlyHint: false },
+  },
+  { name: "run_steps", description: "Run steps.", inputSchema: object({ steps: { type: "array" } }, ["steps"]), annotations: { readOnlyHint: false } },
+  { name: "list_windows", description: "List windows.", inputSchema: object({ node: { $ref: "#" } }), annotations: { readOnlyHint: true } },
+  { name: "run_script", description: "Run AppleScript.", inputSchema: object({ source: { type: "string" } }), annotations: { readOnlyHint: false } },
+  { name: "peek_menu_bar", description: "Read the menu bar.", inputSchema: object(), annotations: { readOnlyHint: true } },
+  { name: "wipe_window", description: "Close every window.", inputSchema: object(), annotations: { readOnlyHint: false } },
+  { name: "start_session", description: "Start.", inputSchema: object({ session: { type: "string" } }), annotations: {} },
+];
 
 async function load(options: {
   settings?: Record<string, string | boolean>;
@@ -53,7 +80,8 @@ async function load(options: {
   toolResult?: ToolCallResult;
   /** Consumed in order before falling back to toolResult. */
   toolResults?: ToolCallResult[];
-  tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+  tools?: CatalogTool[];
+  driverVersion?: string | null;
 } = {}) {
   const hostCalls: Array<{ method: string; input: unknown; hostId: string }> = [];
   const { bb, harness } = createFakePluginHost({
@@ -78,11 +106,12 @@ async function load(options: {
       if (method === "callTool") {
         return options.toolResults?.shift() ?? options.toolResult ?? { content: [{ type: "text", text: "ok" }], isError: false };
       }
-      if (method === "status") {
-        return options.status ?? readyStatus();
-      }
+      if (method === "status") return options.status ?? readyStatus();
       if (method === "listTools") {
-        return { tools: options.tools ?? [{ name: "click", description: "Click\nmore", inputSchema: { type: "object" } }] };
+        return {
+          tools: options.tools ?? TESTED_TOOLS,
+          driverVersion: options.driverVersion === undefined ? (options.status ?? readyStatus()).version : options.driverVersion,
+        };
       }
       if (method === "install" || method === "installState") {
         return { running: method === "install", ok: null, exitCode: null, step: "starting", tail: [], startedAt: null, finishedAt: null };
@@ -92,17 +121,28 @@ async function load(options: {
     },
   });
   await plugin(bb);
-  return { bb, harness, hostCalls };
+  const toolCalls = () => hostCalls.filter((call) => call.method === "callTool").map((call) => call.input as {
+    name: string;
+    arguments: Record<string, unknown>;
+    session?: string;
+    grants: string[];
+  });
+  return { bb, harness, hostCalls, toolCalls };
 }
 
-describe("cua-driver server", () => {
+/** Waits for the startup status probe and the catalog read it triggers. */
+async function settled(hostCalls: Array<{ method: string }>): Promise<void> {
+  await vi.waitFor(() => expect(hostCalls.some((call) => call.method === "listTools")).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe("routing", () => {
   it("offers cua tools to claude-code and pi but not to codex in prefer-native mode", async () => {
     const { harness } = await load();
     const claude = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
-    expect(names(claude)).toContain("cua_get_window_state");
-    expect(names(claude)).toContain("cua_browser_click");
+    expect(names(claude)).toEqual(expect.arrayContaining(["cua_call", "cua_describe", "cua_status", "cua_run_steps", "cua_get_window_state", "cua_browser_click"]));
     expect(claude.skills).toEqual(["cua-computer-use"]);
-    expect(claude.instructions).toMatch(/readiness .* unknown|call cua_status/i);
+    expect(claude.instructions).toMatch(/cua_describe lists every tool/);
 
     const codex = await harness.behavior.resolveAgentConfiguration(context("codex"));
     expect(codex.tools).toEqual([]);
@@ -126,113 +166,195 @@ describe("cua-driver server", () => {
     const rejected = await harness.behavior.runCli(["policy", "codex", "bogus"]);
     expect(rejected.exitCode).toBe(1);
   });
+});
 
-  it("drops tool groups when their settings are off", async () => {
-    const { harness } = await load({ settings: { browserTools: false, clipboardTools: false, passthroughTools: false } });
+describe("exposure policy", () => {
+  it("offers reviewed tools as dedicated tools and keeps risky ones off by default", async () => {
+    const { harness } = await load();
+    const tools = names(await harness.behavior.resolveAgentConfiguration(context("claude-code")));
+    expect(tools).toEqual(expect.arrayContaining(["cua_click", "cua_run_steps", "cua_clipboard_read"]));
+    for (const hidden of ["cua_run_script", "cua_kill_app", "cua_set_config", "cua_get_screen_size", "cua_start_session"]) {
+      expect(tools).not.toContain(hidden);
+    }
+  });
+
+  it("gates cua_call with the same policy as dedicated tools", async () => {
+    const { harness, toolCalls } = await load();
+
+    const allowed = structured(await harness.behavior.callAgentTool("cua_call", { tool: "get_screen_size", arguments: {} }));
+    expect(allowed.isError).toBe(false);
+    expect(toolCalls()[0]).toMatchObject({ name: "get_screen_size" });
+
+    const prefixed = structured(await harness.behavior.callAgentTool("cua_call", { tool: "cua_click", arguments: { pid: 1 } }));
+    expect(prefixed.isError).toBe(false);
+    expect(toolCalls()[1]).toMatchObject({ name: "click", arguments: { pid: 1 } });
+
+    const refused = structured(await harness.behavior.callAgentTool("cua_call", { tool: "run_script", arguments: { source: "x" } }));
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/run_script is turned off.*Do not reach the same capability another way/s);
+    expect(text(refused)).toContain("bb cua expose run_script call");
+
+    const managed = structured(await harness.behavior.callAgentTool("cua_call", { tool: "start_session", arguments: {} }));
+    expect(managed.isError).toBe(true);
+    expect(text(managed)).toMatch(/managed by the Computer Use plugin/);
+    expect(toolCalls()).toHaveLength(2);
+  });
+
+  it("lets the user change one tool's exposure from the CLI or the app", async () => {
+    const { harness, toolCalls } = await load();
+    const exposed = await harness.behavior.runCli(["expose", "run_script", "call"]);
+    expect(exposed).toMatchObject({ exitCode: 0 });
+    expect(exposed.stdout).toMatch(/run_script: call/);
+    await harness.behavior.callAgentTool("cua_call", { tool: "run_script", arguments: { source: "x" } });
+    expect(toolCalls()[0]).toMatchObject({ name: "run_script" });
+
+    await harness.behavior.runCli(["expose", "cua_click", "off"]);
+    expect(names(await harness.behavior.resolveAgentConfiguration(context("claude-code")))).not.toContain("cua_click");
+    const refused = structured(await harness.behavior.callAgentTool("cua_click", { pid: 1 }));
+    expect(refused.isError).toBe(true);
+    expect(toolCalls()).toHaveLength(1);
+
+    const state = (await harness.behavior.callRpc("setExposure", { tool: "click", exposure: "default" })) as {
+      tools: Array<{ name: string; exposure: string; override: string | null }>;
+    };
+    expect(state.tools.find((tool) => tool.name === "click")).toMatchObject({ exposure: "tool", override: null });
+    expect(names(await harness.behavior.resolveAgentConfiguration(context("claude-code")))).toContain("cua_click");
+
+    expect((await harness.behavior.runCli(["expose", "start_session", "tool"])).exitCode).toBe(1);
+    expect((await harness.behavior.runCli(["expose", "click", "sideways"])).exitCode).toBe(1);
+  });
+
+  it("turns a whole group off, cua_call included", async () => {
+    const { harness, toolCalls } = await load({ settings: { browserTools: false, clipboardTools: false } });
     const tools = names(await harness.behavior.resolveAgentConfiguration(context("pi")));
     expect(tools).not.toContain("cua_browser_click");
     expect(tools).not.toContain("cua_clipboard_read");
-    expect(tools).not.toContain("cua_call");
-    expect(tools).toContain("cua_status");
-    expect(tools).toContain("cua_click");
+    expect(tools).toEqual(expect.arrayContaining(["cua_call", "cua_status", "cua_click"]));
+    const refused = structured(await harness.behavior.callAgentTool("cua_call", { tool: "clipboard_read", arguments: {} }));
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/Clipboard tools/);
+    expect(toolCalls()).toHaveLength(0);
   });
 
-  it("routes a tool call to the thread's host with a per-thread session label", async () => {
+  it("applies the policy to `bb cua call` too", async () => {
+    const { harness, toolCalls } = await load();
+    const refused = await harness.behavior.runCli(["call", "kill_app", '{"pid":1}']);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stdout).toMatch(/kill_app is turned off/);
+    const allowed = await harness.behavior.runCli(["call", "get_screen_size", "--json"]);
+    expect(allowed.exitCode).toBe(0);
+    expect(toolCalls().map((call) => call.name)).toEqual(["get_screen_size"]);
+
+    const { harness: screenshots } = await load({
+      toolResult: { content: [{ type: "image", data: "A".repeat(2_000_000), mimeType: "image/png" }], isError: false },
+    });
+    const shot = await screenshots.behavior.runCli(["call", "get_window_state", '{"pid":1}', "--json"]);
+    expect(JSON.parse(shot.stdout ?? "").content).toEqual([{ type: "image", mimeType: "image/png", base64Chars: 2_000_000 }]);
+  });
+});
+
+describe("live catalog", () => {
+  it("reads a newer driver's own tools, offers its schemas, and reports the drift", async () => {
+    const { harness, hostCalls, toolCalls } = await load({ status: readyStatus({ version: "9.0.0" }), tools: NEWER_DRIVER });
+    await settled(hostCalls);
+
+    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(names(configuration).sort()).toEqual(["cua_call", "cua_click", "cua_describe", "cua_list_windows", "cua_run_steps", "cua_status"]);
+    const click = configuration.tools.find((tool) => tool.name === "cua_click");
+    expect(click?.inputSchema).toEqual({ type: "object", properties: { brand_new_arg: { type: "string" }, pid: { type: "integer" } }, required: ["pid"] });
+    // A schema bb would refuse as an override falls back to a permissive one.
+    expect(configuration.tools.find((tool) => tool.name === "cua_list_windows")?.inputSchema).toEqual({ type: "object", additionalProperties: true });
+    expect(configuration.instructions).toMatch(/Cua Driver 9\.0\.0 is untested \(plugin tested with .*\): 2 new \(peek_menu_bar, wipe_window\)/);
+
+    // New read-only tools are reachable through cua_call; new acting tools are not.
+    expect(structured(await harness.behavior.callAgentTool("cua_call", { tool: "peek_menu_bar", arguments: {} })).isError).toBe(false);
+    const refused = structured(await harness.behavior.callAgentTool("cua_call", { tool: "wipe_window", arguments: {} }));
+    expect(refused.isError).toBe(true);
+    expect(toolCalls().map((call) => call.name)).toEqual(["peek_menu_bar"]);
+
+    const drift = await harness.behavior.runCli(["drift"]);
+    expect(drift.stdout).toMatch(/2 new \(peek_menu_bar, wipe_window\)/);
+    expect(drift.stdout).toMatch(/~ click: new arguments: brand_new_arg/);
+    const state = (await harness.behavior.callRpc("getState", null)) as { hosts: Array<{ drift: { drifted: boolean; added: string[] } | null }> };
+    expect(state.hosts[0]?.drift).toMatchObject({ drifted: true, added: ["peek_menu_bar", "wipe_window"] });
+  });
+
+  it("registers a tool first seen on a machine so its exposure can be raised", async () => {
+    const { harness, hostCalls, toolCalls } = await load({ status: readyStatus({ version: "9.0.0" }), tools: NEWER_DRIVER });
+    await settled(hostCalls);
+    await harness.behavior.runCli(["expose", "peek_menu_bar", "tool"]);
+    expect(names(await harness.behavior.resolveAgentConfiguration(context("claude-code")))).toContain("cua_peek_menu_bar");
+    await harness.behavior.callAgentTool("cua_peek_menu_bar", {});
+    expect(toolCalls().map((call) => call.name)).toEqual(["peek_menu_bar"]);
+  });
+
+  it("keeps a machine's catalog across plugin reloads", async () => {
+    const { harness, hostCalls } = await load({ status: readyStatus({ version: "9.0.0" }), tools: NEWER_DRIVER });
+    await settled(hostCalls);
+    const reloaded = await harness.lifecycle.reload(plugin);
+    const configuration = await reloaded.harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(names(configuration)).toContain("cua_list_windows");
+    expect(names(configuration)).not.toContain("cua_zoom");
+  });
+
+  it("asks the driver again before refusing an unknown tool name", async () => {
     const { harness, hostCalls } = await load();
+    await settled(hostCalls);
+    const before = hostCalls.filter((call) => call.method === "listTools").length;
+    const result = structured(await harness.behavior.callAgentTool("cua_call", { tool: "not_a_tool", arguments: {} }));
+    expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(/no tool named not_a_tool/);
+    expect(hostCalls.filter((call) => call.method === "listTools").length).toBe(before + 1);
+  });
+
+  it("stays quiet about drift on the tested driver", async () => {
+    const { harness, hostCalls } = await load();
+    await settled(hostCalls);
+    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
+    expect(configuration.instructions).not.toMatch(/untested/);
+    expect(configuration.instructions).toMatch(/the version this plugin was tested with/);
+    const state = (await harness.behavior.callRpc("getState", null)) as { hosts: Array<{ drift: { drifted: boolean } | null }> };
+    expect(state.hosts[0]?.drift).toMatchObject({ drifted: false });
+    expect((await harness.behavior.runCli(["drift"])).stdout).toMatch(/is the version this plugin was tested with/);
+  });
+
+  it("describes tools by how agents reach them", async () => {
+    const { harness, hostCalls } = await load({ status: readyStatus({ version: "9.0.0" }), tools: NEWER_DRIVER });
+    await settled(hostCalls);
+    const described = text(await harness.behavior.callAgentTool("cua_describe", {}));
+    expect(described).toMatch(/^Cua Driver 9\.0\.0 is untested/);
+    expect(described).toMatch(/Dedicated tools \(call them directly\):\n- cua_click: Click an element by element_token/);
+    expect(described).toMatch(/Through cua_call \{tool, arguments\}:\n- peek_menu_bar/);
+    expect(described).toMatch(/Turned off by the user.*\n- run_script: .*\n- wipe_window/s);
+    expect(described).not.toMatch(/^- (cua_)?start_session/m);
+
+    const one = text(await harness.behavior.callAgentTool("cua_describe", { tool: "cua_click" }));
+    expect(one).toMatch(/^click \(Call it as cua_click\.\)/);
+    expect(one).toContain("Long detail.");
+  });
+});
+
+describe("driver calls", () => {
+  it("routes a tool call to the thread's host with a per-thread session label", async () => {
+    const { harness, toolCalls, hostCalls } = await load();
     const result = await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" });
     expect(result).toEqual({ content: [{ type: "text", text: "ok" }], isError: false });
-    const toolCalls = hostCalls.filter((call) => call.method === "callTool");
-    expect(toolCalls).toHaveLength(1);
-    expect(toolCalls[0]).toMatchObject({
-      method: "callTool",
-      input: { name: "click", arguments: { pid: 4, element_token: "s1:2" } },
-      hostId: "host_9",
-    });
-    expect((toolCalls[0]!.input as { session: string }).session).toMatch(/^bb-/);
-
-    await harness.behavior.callAgentTool("cua_call", { tool: "start_recording", arguments: { output_dir: "/tmp/x" } });
-    expect(hostCalls.filter((call) => call.method === "callTool")[1]!.input).toMatchObject({
-      name: "start_recording",
-      arguments: { output_dir: "/tmp/x" },
-    });
+    expect(toolCalls()).toHaveLength(1);
+    expect(hostCalls.find((call) => call.method === "callTool")?.hostId).toBe("host_9");
+    expect(toolCalls()[0]).toMatchObject({ name: "click", arguments: { pid: 4, element_token: "s1:2" } });
+    const firstSession = toolCalls()[0]!.session;
+    expect(firstSession).toMatch(/^bb-/);
 
     await harness.behavior.emitThreadEvent("thread.idle", { thread: makeThreadResponse({ id: "thread-test" }), lastAssistantText: null });
-    await vi.waitFor(() => expect(hostCalls.some((call) => (call.input as { name: string }).name === "end_session")).toBe(true));
+    await vi.waitFor(() => expect(toolCalls().some((call) => call.name === "end_session")).toBe(true));
 
-    const firstSession = (toolCalls[0]!.input as { session: string }).session;
     await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:3" });
-    const resumed = hostCalls.filter(
-      (call) => call.method === "callTool" && (call.input as { name: string }).name === "click",
-    );
-    expect((resumed[1]!.input as { session: string }).session).not.toBe(firstSession);
+    const clicks = toolCalls().filter((call) => call.name === "click");
+    expect(clicks[1]!.session).not.toBe(firstSession);
   });
 
-  it("explains a missing driver through cua_status and the rpc state", async () => {
-    const { harness, hostCalls } = await load({
-      status: readyStatus({
-        installed: false,
-        binaryPath: null,
-        version: null,
-        daemonRunning: null,
-        permissions: null,
-        toolCount: null,
-      }),
-    });
-    const status = structured(await harness.behavior.callAgentTool("cua_status", {}));
-    expect(status.isError).toBeFalsy();
-    expect(status.content[0]).toMatchObject({ type: "text" });
-    expect(status.content[0]?.text).toMatch(/NOT installed/);
-
-    const state = (await harness.behavior.callRpc("getState", null)) as StateView;
-    expect(state.providers.map((provider) => [provider.id, provider.decision])).toEqual([
-      ["codex", "native"],
-      ["claude-code", "cua"],
-      ["pi", "cua"],
-    ]);
-    expect(state.hosts[0]).toMatchObject({ id: "host_9", driver: { installed: false } });
-
-    const blocked = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
-    expect(blocked.isError).toBe(true);
-    expect(blocked.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
-    expect(blocked.content[0]?.text).toMatch(/Install Cua Driver/);
-    expect(hostCalls.some((call) => call.method === "callTool")).toBe(false);
-
-    const described = structured(await harness.behavior.callAgentTool("cua_describe", {}));
-    expect(described.content[0]?.text).toBe("click: Click");
-  });
-
-  it("blocks desktop actions before macOS permissions are ready and links to setup", async () => {
-    const { harness, hostCalls } = await load({
-      status: readyStatus({ permissions: { accessibility: true, screenRecording: false, directCapture: "not_checked" } }),
-    });
-
-    const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/Screen Recording/);
-    expect(result.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
-    expect(result.content[0]?.text).toMatch(/Grant macOS permissions/);
-    expect(hostCalls.some((call) => call.method === "callTool")).toBe(false);
-  });
-
-  it("turns an upstream permission failure into the same guided recovery", async () => {
-    const { harness, hostCalls } = await load({
-      toolResult: {
-        content: [{ type: "text", text: "permissions_pending: Screen Recording permission is still pending" }],
-        isError: true,
-        structured: { exit_code: 75 },
-      },
-    });
-
-    const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
-    expect(result.content[0]?.text).toMatch(/Driver detail:.*permissions_pending/);
-    expect(hostCalls.some((call) => call.method === "callTool")).toBe(true);
-    expect(hostCalls.filter((call) => call.method === "status")).toHaveLength(2);
-  });
-
-  it("forwards upstream arguments untouched but keeps the session plugin-owned", async () => {
-    const { harness, hostCalls } = await load();
+  it("forwards driver arguments untouched but keeps the session plugin-owned", async () => {
+    const { harness, toolCalls } = await load();
     await harness.behavior.callAgentTool("cua_click", {
       pid: 4,
       element_token: "s1:2",
@@ -240,14 +362,9 @@ describe("cua-driver server", () => {
       target: { window_id: 9 },
       session: "someone-elses-session",
     });
-    const call = hostCalls.find((entry) => entry.method === "callTool")!.input as {
-      arguments: Record<string, unknown>;
-      session: string;
-      grants: string[];
-    };
-    expect(call.arguments).toEqual({ pid: 4, element_token: "s1:2", from_zoom: true, target: { window_id: 9 } });
-    expect(call.session).toMatch(/^bb-/);
-    expect(call.grants).toEqual([]);
+    expect(toolCalls()[0]!.arguments).toEqual({ pid: 4, element_token: "s1:2", from_zoom: true, target: { window_id: 9 } });
+    expect(toolCalls()[0]!.session).toMatch(/^bb-/);
+    expect(toolCalls()[0]!.grants).toEqual([]);
   });
 
   it("retries once with a fresh session after Cua Driver ended the old one", async () => {
@@ -255,158 +372,158 @@ describe("cua-driver server", () => {
       content: [{ type: "text", text: "session 'bb-thr' has ended; tool call 'click' was rejected." }],
       isError: true,
     };
-    const { harness, hostCalls } = await load({ toolResults: [ended] });
+    const { harness, toolCalls } = await load({ toolResults: [ended] });
     const result = await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" });
     expect(result).toEqual({ content: [{ type: "text", text: "ok" }], isError: false });
-    const sessions = hostCalls
-      .filter((entry) => entry.method === "callTool")
-      .map((entry) => (entry.input as { session: string }).session);
+    const sessions = toolCalls().map((call) => call.session);
     expect(sessions).toHaveLength(2);
     expect(sessions[1]).not.toBe(sessions[0]);
   });
 
   it("forgets a machine's sessions when its Cua connection drops", async () => {
-    const { harness, hostCalls } = await load();
+    const { harness, toolCalls } = await load();
     await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" });
-    await harness.behavior.experimental_emitHostSignal("host_9", "connectionChanged", {
-      connected: false,
-      reason: "idle timeout",
-    });
+    await harness.behavior.experimental_emitHostSignal("host_9", "connectionChanged", { connected: false, reason: "idle timeout" });
     await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:3" });
-    const sessions = hostCalls
-      .filter((entry) => entry.method === "callTool")
-      .map((entry) => (entry.input as { session: string }).session);
+    const sessions = toolCalls().map((call) => call.session);
     expect(sessions[1]).not.toBe(sessions[0]);
   });
 
   it("asks Cua Driver for signed-in browser profiles only when the setting is on", async () => {
-    const { harness, hostCalls } = await load();
+    const { harness, toolCalls } = await load();
     await harness.behavior.callAgentTool("cua_get_browser_state", {});
     await harness.behavior.setSettings({ signedInBrowserProfiles: true });
     await harness.behavior.callAgentTool("cua_get_browser_state", {});
-    const grants = hostCalls
-      .filter((entry) => entry.method === "callTool")
-      .map((entry) => (entry.input as { grants: string[] }).grants);
-    expect(grants).toEqual([[], ["existing-profile"]]);
+    expect(toolCalls().map((call) => call.grants)).toEqual([[], ["existing-profile"]]);
   });
 
   it("refuses to attach to a signed-in browser profile while the setting is off", async () => {
-    const { harness, hostCalls } = await load();
+    const { harness, toolCalls } = await load();
     const refused = structured(
       await harness.behavior.callAgentTool("cua_browser_prepare", { pid: 7, window_id: 3, strategy: { kind: "existing_profile" } }),
     );
     expect(refused.isError).toBe(true);
-    expect(refused.content[0]?.text).toMatch(/Signed-in browser profiles/);
-    expect(hostCalls.some((entry) => entry.method === "callTool")).toBe(false);
+    expect(text(refused)).toMatch(/Signed-in browser profiles/);
+    expect(toolCalls()).toHaveLength(0);
 
     await harness.behavior.setSettings({ signedInBrowserProfiles: true });
     await harness.behavior.callAgentTool("cua_browser_prepare", { pid: 7, window_id: 3, strategy: { kind: "existing_profile" } });
-    expect(hostCalls.find((entry) => entry.method === "callTool")?.input).toMatchObject({
-      name: "browser_prepare",
-      grants: ["existing-profile"],
+    expect(toolCalls()[0]).toMatchObject({ name: "browser_prepare", grants: ["existing-profile"] });
+  });
+});
+
+describe("setup guidance", () => {
+  it("explains a missing driver through cua_status, the tools, and the rpc state", async () => {
+    const { harness, toolCalls } = await load({
+      status: readyStatus({ installed: false, binaryPath: null, version: null, daemonRunning: null, permissions: null, toolCount: null }),
     });
+    const status = structured(await harness.behavior.callAgentTool("cua_status", {}));
+    expect(status.isError).toBeFalsy();
+    expect(text(status)).toMatch(/NOT installed/);
+    expect(text(status)).toContain(`CUA_DRIVER_RS_VERSION=${TESTED_DRIVER_VERSION}`);
+
+    const state = (await harness.behavior.callRpc("getState", null)) as {
+      providers: Array<{ id: string; decision: string }>;
+      hosts: Array<{ id: string; driver: { installed: boolean } | null; drift: unknown }>;
+      testedVersion: string;
+    };
+    expect(state.providers.map((provider) => [provider.id, provider.decision])).toEqual([
+      ["codex", "native"],
+      ["claude-code", "cua"],
+      ["pi", "cua"],
+    ]);
+    expect(state.hosts[0]).toMatchObject({ id: "host_9", driver: { installed: false }, drift: null });
+    expect(state.testedVersion).toBe(TESTED_DRIVER_VERSION);
+
+    const blocked = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
+    expect(blocked.isError).toBe(true);
+    expect(text(blocked)).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
+    expect(text(blocked)).toMatch(/Install Cua Driver/);
+    expect(toolCalls()).toHaveLength(0);
   });
 
-  it("advertises a machine's own tool schemas once its driver version differs from the bundled one", async () => {
-    const { harness, hostCalls } = await load({
-      status: readyStatus({ version: "0.29.0" }),
-      tools: [
-        {
-          name: "click",
-          description: "Click",
-          inputSchema: {
-            type: "object",
-            properties: { pid: { type: "integer" }, brand_new_arg: { type: "string" }, session: { type: "string" } },
-            required: ["pid", "session"],
-          },
-        },
-      ],
+  it("blocks desktop actions before macOS permissions are ready and links to setup", async () => {
+    const { harness, toolCalls } = await load({
+      status: readyStatus({ permissions: { accessibility: true, screenRecording: false, directCapture: "not_checked" } }),
     });
-    await harness.behavior.callAgentTool("cua_click", { pid: 4 });
-    expect(hostCalls.some((entry) => entry.method === "listTools")).toBe(true);
-    // The machine's tools/list is read in the background after the first call.
-    await vi.waitFor(async () => {
-      const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code", "host_9"));
-      const click = configuration.tools.find((tool) => tool.name === "cua_click");
-      expect(click?.inputSchema).toMatchObject({
-        properties: { pid: { type: "integer" }, brand_new_arg: { type: "string" } },
-        required: ["pid"],
-      });
-      expect(JSON.stringify(click?.inputSchema)).not.toContain("session");
-    });
+    const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
+    expect(result.isError).toBe(true);
+    expect(text(result)).toMatch(/Screen Recording/);
+    expect(text(result)).toMatch(/Grant macOS permissions/);
+    expect(toolCalls()).toHaveLength(0);
   });
 
-  it("keeps the bundled schema for a live one bb would refuse, and still overrides the rest", async () => {
-    const { harness } = await load({
-      status: readyStatus({ version: "0.29.0" }),
-      tools: [
-        { name: "click", description: "Click", inputSchema: { type: "object", properties: { node: { $ref: "#" } } } },
-        { name: "scroll", description: "Scroll", inputSchema: { type: "object", properties: { brand_new_arg: { type: "string" } } } },
-      ],
+  it("turns a driver permission failure into the same guided recovery", async () => {
+    const { harness, hostCalls, toolCalls } = await load({
+      toolResult: {
+        content: [{ type: "text", text: "permissions_pending: Screen Recording permission is still pending" }],
+        isError: true,
+        structured: { exit_code: 75 },
+      },
     });
-    await harness.behavior.callAgentTool("cua_click", { pid: 4 });
-    await vi.waitFor(async () => {
-      const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code", "host_9"));
-      const schemaOf = (name: string) => configuration.tools.find((tool) => tool.name === name)?.inputSchema as { properties: object };
-      expect(Object.keys(schemaOf("cua_scroll").properties)).toEqual(["brand_new_arg"]);
-      expect(Object.keys(schemaOf("cua_click").properties)).toContain("element_token");
-    });
+    const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
+    expect(text(result)).toMatch(/Driver detail:.*permissions_pending/);
+    expect(toolCalls()).toHaveLength(1);
+    const lastCall = hostCalls.map((call) => call.method).lastIndexOf("callTool");
+    expect(hostCalls.slice(lastCall).some((call) => call.method === "status")).toBe(true);
   });
+});
 
-  it("keeps the bundled schemas when the machine runs the version they came from", async () => {
-    const { harness } = await load({ status: readyStatus({ version: "0.28.2" }) });
-    await harness.behavior.callAgentTool("cua_click", { pid: 4 });
-    const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code", "host_9"));
-    const click = configuration.tools.find((tool) => tool.name === "cua_click");
-    expect(Object.keys((click?.inputSchema as { properties: object }).properties)).toContain("element_token");
-  });
-
-  it("updates Cua Driver only when a newer release exists and the user confirms", async () => {
-    const current = await load({ status: readyStatus({ latestVersion: "0.28.2", updateAvailable: false }) });
-    const latest = await current.harness.behavior.runCli(["update"]);
-    expect(latest).toMatchObject({ exitCode: 0 });
-    expect(latest.stdout).toMatch(/already the newest/);
-
-    const behind = await load({ status: readyStatus({ version: "0.23.2", latestVersion: "0.28.2", updateAvailable: true }) });
-    const unconfirmed = await behind.harness.behavior.runCli(["update"]);
-    expect(unconfirmed.exitCode).toBe(1);
-    expect(unconfirmed.stderr).toMatch(/0\.23\.2.*0\.28\.2.*--yes/s);
-    expect(behind.hostCalls.some((entry) => entry.method === "install")).toBe(false);
-
-    await behind.harness.behavior.runCli(["update", "--yes"]);
-    expect(behind.hostCalls.some((entry) => entry.method === "install")).toBe(true);
-  });
-
-  it("requires --yes for the installer and mirrors install progress from host signals", async () => {
+describe("install and update", () => {
+  it("installs the tested driver version unless --latest is passed", async () => {
     const { harness, hostCalls } = await load();
     const refused = await harness.behavior.runCli(["install"]);
     expect(refused.exitCode).toBe(1);
-    expect(refused.stderr).toMatch(/--yes/);
+    expect(refused.stderr).toMatch(new RegExp(`Cua Driver ${TESTED_DRIVER_VERSION.replace(/\./g, "\\.")}.*--latest.*--yes`, "s"));
     expect(hostCalls.some((call) => call.method === "install")).toBe(false);
 
-    const started = (await harness.behavior.callRpc("installDriver", { hostId: "host_9" })) as { running: boolean };
+    const started = (await harness.behavior.callRpc("installDriver", { hostId: "host_9", target: "tested" })) as { running: boolean };
     expect(started.running).toBe(true);
-    expect(hostCalls.at(-1)).toMatchObject({ method: "install", hostId: "host_9" });
+    expect(hostCalls.at(-1)).toMatchObject({ method: "install", hostId: "host_9", input: { version: TESTED_DRIVER_VERSION } });
+    await harness.behavior.callRpc("installDriver", { hostId: "host_9", target: "latest" });
+    expect(hostCalls.at(-1)).toMatchObject({ method: "install", input: { version: null } });
+  });
 
-    await harness.behavior.experimental_emitHostSignal(
-      "host_9",
-      "installChanged",
-      { running: true, ok: null, exitCode: null, step: "install", tail: ["$ /bin/bash x.sh", "Installing"], startedAt: null, finishedAt: null },
-    );
+  it("moves a machine to the tested version, or the newest release on request", async () => {
+    const current = await load();
+    const same = await current.harness.behavior.runCli(["update"]);
+    expect(same).toMatchObject({ exitCode: 0 });
+    expect(same.stdout).toMatch(/already installed/);
+
+    const newest = await load({ status: readyStatus({ latestVersion: TESTED_DRIVER_VERSION, updateAvailable: false }) });
+    expect((await newest.harness.behavior.runCli(["update", "--latest"])).stdout).toMatch(/already the newest/);
+
+    const behind = await load({ status: readyStatus({ version: "0.20.0", latestVersion: "99.0.0", updateAvailable: true }) });
+    const unconfirmed = await behind.harness.behavior.runCli(["update"]);
+    expect(unconfirmed.exitCode).toBe(1);
+    expect(unconfirmed.stderr).toMatch(/--yes/);
+    expect(behind.hostCalls.some((entry) => entry.method === "install")).toBe(false);
+
+    await behind.harness.behavior.runCli(["update", "--yes"]);
+    expect(behind.hostCalls.find((entry) => entry.method === "install")?.input).toEqual({ version: TESTED_DRIVER_VERSION });
+    await behind.harness.behavior.runCli(["update", "--latest", "--yes"]);
+    expect(behind.hostCalls.filter((entry) => entry.method === "install").at(-1)?.input).toEqual({ version: null });
+  });
+
+  it("mirrors install progress from host signals and refreshes status when it finishes", async () => {
+    const { harness, hostCalls } = await load();
+    await harness.behavior.experimental_emitHostSignal("host_9", "installChanged", {
+      running: true, ok: null, exitCode: null, step: "install", tail: ["$ /bin/bash x.sh", "Installing"], startedAt: null, finishedAt: null,
+    });
     let state = (await harness.behavior.callRpc("getState", null)) as { hosts: Array<{ install: { running: boolean; tail: string[] } }> };
     expect(state.hosts[0]?.install).toMatchObject({ running: true, tail: ["$ /bin/bash x.sh", "Installing"] });
 
-    await harness.behavior.experimental_emitHostSignal(
-      "host_9",
-      "installChanged",
-      { running: false, ok: true, exitCode: 0, step: "done", tail: ["done"], startedAt: null, finishedAt: null },
-    );
-    await vi.waitFor(() => expect(hostCalls.filter((call) => call.method === "status").length).toBeGreaterThan(0));
+    const before = hostCalls.filter((call) => call.method === "status").length;
+    await harness.behavior.experimental_emitHostSignal("host_9", "installChanged", {
+      running: false, ok: true, exitCode: 0, step: "done", tail: ["done"], startedAt: null, finishedAt: null,
+    });
+    await vi.waitFor(() => expect(hostCalls.filter((call) => call.method === "status").length).toBeGreaterThan(before));
     state = (await harness.behavior.callRpc("getState", null)) as typeof state;
     expect(state.hosts[0]?.install).toMatchObject({ running: false });
 
     const grant = (await harness.behavior.callRpc("grantPermissions", { hostId: "host_9" })) as { ok: boolean };
     expect(grant.ok).toBe(true);
-    expect(hostCalls.some((call) => call.method === "grantPermissions")).toBe(true);
   });
 });

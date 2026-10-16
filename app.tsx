@@ -23,6 +23,9 @@ type Mode = State["mode"];
 type Override = State["providers"][number]["override"];
 type Host = State["hosts"][number];
 type InstallState = Host["install"];
+type ToolView = State["tools"][number];
+type Exposure = ToolView["exposure"];
+type InstallTarget = "tested" | "latest";
 
 const CUA_DOCS_URL = "https://cua.ai/docs";
 const CUA_INSTALL_URL = "https://cua.ai/docs/how-to-guides/driver/install";
@@ -48,6 +51,12 @@ const OVERRIDES: Array<{ value: Override; label: string }> = [
   { value: "native", label: "Harness-native" },
   { value: "off", label: "Off" },
 ];
+
+const EXPOSURE_LABELS: Record<Exposure, string> = {
+  tool: "Dedicated tool",
+  call: "cua_call only",
+  off: "Off",
+};
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -333,17 +342,23 @@ function InstallerOutput({ host }: { host: Host }) {
 
 function InstallDialog({
   host,
+  testedVersion,
   open,
   onOpenChange,
   onInstall,
   installing,
 }: {
   host: Host;
+  testedVersion: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onInstall: () => Promise<void>;
+  onInstall: (target: InstallTarget) => Promise<void>;
   installing: boolean;
 }) {
+  const installed = host.driver?.installed === true;
+  const current = installed ? host.driver?.version ?? null : null;
+  const latest = host.driver?.latestVersion ?? null;
+  const retryTarget: InstallTarget = installTarget(host.install, testedVersion);
   const install = host.install;
   const idle = !install.running && install.ok === null;
   const failed = install.ok === false;
@@ -354,7 +369,9 @@ function InstallDialog({
       ? "Cua Driver installation failed"
       : completed
         ? "Cua Driver installed"
-        : `Install Cua Driver on ${host.name}`;
+        : installed
+          ? `Change Cua Driver on ${host.name}`
+          : `Install Cua Driver on ${host.name}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -363,9 +380,9 @@ function InstallDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {idle
-              ? `This downloads Cua's official ${host.driver?.platform === "win32" ? "install.ps1" : "install.sh"} installer from cua.ai and runs it on ${host.name} as your user. It does not request administrator access.`
+              ? `This runs Cua's official ${host.driver?.platform === "win32" ? "install.ps1" : "install.sh"} installer on ${host.name} as your user, pinned to one release. It does not request administrator access.`
               : install.running
-                ? `The official Cua installer is running on ${host.name}.`
+                ? `The official Cua installer is running on ${host.name}${install.target ? ` (v${install.target})` : " (newest release)"}.`
                 : failed
                   ? "The installer stopped before Computer Use was ready. Review the details below, then retry."
                   : "Computer Use can now connect to this machine through Cua Driver."}
@@ -374,7 +391,15 @@ function InstallDialog({
 
         {idle ? (
           <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
-            <p>On macOS, you will still approve Accessibility and Screen Recording after installation.</p>
+            <p>
+              This plugin release was tested with <strong className="font-medium text-foreground">v{testedVersion}</strong>
+              {current !== null ? <> and this machine runs v{current}</> : null}. A newer release can add or change tools; Computer Use then keeps tools it has not reviewed off until you allow them.
+            </p>
+            {installed ? (
+              <p>The running driver is stopped first and restarted afterwards.</p>
+            ) : (
+              <p>On macOS, you will still approve Accessibility and Screen Recording after installation.</p>
+            )}
             <a className="inline-flex rounded-sm text-foreground underline underline-offset-4 hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" href={CUA_INSTALL_URL} target="_blank" rel="noreferrer">
               Review Cua Driver installation docs
             </a>
@@ -392,8 +417,11 @@ function InstallDialog({
               <DialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </DialogClose>
-              <Button disabled={installing} onClick={() => void onInstall()}>
-                {installing ? "Starting…" : "Run installer"}
+              <Button variant="outline" disabled={installing} onClick={() => void onInstall("latest")}>
+                {latest !== null && latest !== testedVersion ? `Newest v${latest} (untested)` : "Newest release"}
+              </Button>
+              <Button disabled={installing || current === testedVersion} onClick={() => void onInstall("tested")}>
+                {installing ? "Starting…" : current === testedVersion ? `v${testedVersion} installed` : `Install v${testedVersion}`}
               </Button>
             </>
           ) : install.running ? (
@@ -405,7 +433,7 @@ function InstallDialog({
               <DialogClose asChild>
                 <Button variant="outline">Close</Button>
               </DialogClose>
-              <Button disabled={installing} onClick={() => void onInstall()}>
+              <Button disabled={installing} onClick={() => void onInstall(retryTarget)}>
                 {installing ? "Starting…" : "Retry installation"}
               </Button>
             </>
@@ -418,6 +446,10 @@ function InstallDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function installTarget(install: InstallState, testedVersion: string): InstallTarget {
+  return install.target === undefined || install.target === testedVersion ? "tested" : "latest";
 }
 
 type SetupCheckState = "complete" | "required" | "waiting" | "automatic";
@@ -435,7 +467,7 @@ function permissionCheck(label: string, value: boolean | null | undefined): Setu
   return { label, detail: "Check again after approving this permission", state: "waiting" };
 }
 
-function setupChecks(host: Host): SetupCheck[] {
+function setupChecks(host: Host, testedVersion: string): SetupCheck[] {
   const driver = host.driver;
   const checks: SetupCheck[] = [
     {
@@ -445,13 +477,18 @@ function setupChecks(host: Host): SetupCheck[] {
     },
     {
       label: "Cua Driver",
-      detail: driver === null ? "Check setup to inspect this machine" : undefined,
       meta:
         driver?.installed && driver.version !== null
-          ? driver.updateAvailable === true && driver.latestVersion !== null
-            ? `v${driver.version} · v${driver.latestVersion} available`
-            : `v${driver.version}`
+          ? driver.version === testedVersion
+            ? `v${driver.version} · tested`
+            : `v${driver.version} · untested`
           : undefined,
+      detail:
+        driver === null
+          ? "Check setup to inspect this machine"
+          : driver.installed && driver.version !== testedVersion
+            ? `This plugin was tested with v${testedVersion}`
+            : undefined,
       state: driver === null ? "waiting" : driver.installed ? "complete" : "required",
     },
   ];
@@ -575,12 +612,14 @@ function checkStateLabel(state: SetupCheckState): string {
 
 function MachineSetupPanel({
   host,
+  testedVersion,
   onRefresh,
   onOpenInstall,
   onGrant,
   busy,
 }: {
   host: Host;
+  testedVersion: string;
   onRefresh: () => void;
   onOpenInstall: () => void;
   onGrant: () => void;
@@ -607,15 +646,18 @@ function MachineSetupPanel({
   const refreshing = busy === `status:${host.id}`;
   const granting = busy === `grant:${host.id}`;
   const canInstall = driver !== null && !driver.installed;
-  // An update reuses the installer flow: it stops the driver, installs the newest release and restarts it.
-  const canUpdate = driver !== null && driver.installed && driver.updateAvailable === true;
+  // Changing versions reuses the installer flow: it stops the driver, installs the chosen release and restarts it.
+  const offTested = driver !== null && driver.installed && driver.version !== testedVersion;
+  const newerUntested = driver !== null && driver.installed && !offTested && driver.updateAvailable === true;
+  const canUpdate = offTested || newerUntested;
   const canGrant =
     driver?.platform === "darwin" &&
     driver.installed &&
     (driver.permissions?.accessibility !== true ||
       driver.permissions?.screenRecording !== true ||
       (driver.permissions?.directCapture !== undefined && /denied|blocked|missing|error/i.test(driver.permissions.directCapture ?? "")));
-  const checks = setupChecks(host);
+  const checks = setupChecks(host, testedVersion);
+  const drift = host.drift?.drifted === true ? host.drift : null;
   const requiredChecks = checks.filter((check) => check.state !== "automatic");
   const completeCount = requiredChecks.filter((check) => check.state === "complete").length;
   const needsAction = requiredChecks.some((check) => check.state === "required" || check.state === "waiting");
@@ -666,6 +708,15 @@ function MachineSetupPanel({
             ))}
           </ol>
 
+          {drift !== null ? (
+            <div className="mt-2 flex gap-3 py-2" data-driver-drift>
+              <CheckIcon state="waiting" />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {drift.summary} New tools that are not read-only stay off until you allow them under Agent tools.
+              </p>
+            </div>
+          ) : null}
+
           {driver?.error ? (
             <div className="mt-2 flex gap-3 py-2" role="alert">
               <CheckIcon state="required" />
@@ -676,14 +727,21 @@ function MachineSetupPanel({
           {showActions ? (
             <div className="mt-3 grid gap-2">
               {canInstall || canUpdate ? (
-                <Button className="min-h-10 w-full rounded-full" disabled={busy !== null && !install.running} onClick={onOpenInstall}>
+                <Button
+                  className="min-h-10 w-full rounded-full"
+                  variant={newerUntested && !install.running && install.ok !== false ? "outline" : "default"}
+                  disabled={busy !== null && !install.running}
+                  onClick={onOpenInstall}
+                >
                   {install.running
                     ? "View progress"
                     : install.ok === false
                       ? "Retry install…"
-                      : canUpdate
-                        ? `Update to v${driver?.latestVersion ?? "latest"}…`
-                        : "Install Cua Driver…"}
+                      : offTested
+                        ? `Switch to tested v${testedVersion}…`
+                        : newerUntested
+                          ? `v${driver?.latestVersion ?? "newer"} available (untested)…`
+                          : "Install Cua Driver…"}
                 </Button>
               ) : null}
               {canGrant ? (
@@ -704,13 +762,13 @@ function MachineSetupPanel({
   );
 }
 
-function ManualInstallHelp() {
+function ManualInstallHelp({ testedVersion }: { testedVersion: string }) {
   return (
     <div className="mt-3 border-t border-border/60 pt-2">
       <Disclosure label="Troubleshooting and manual commands">
         <div className="space-y-3 px-2 pt-2 text-xs leading-relaxed text-muted-foreground">
           <p>
-            Diagnose the driver with <code className="text-foreground">cua-driver doctor</code>. macOS/Linux install: <code className="break-all text-foreground">/bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"</code>. Windows install: <code className="break-all text-foreground">irm https://cua.ai/driver/install.ps1 | iex</code>.
+            Diagnose the driver with <code className="text-foreground">cua-driver doctor</code>. macOS/Linux install of the tested release: <code className="break-all text-foreground">CUA_DRIVER_RS_VERSION={testedVersion} /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"</code>. Windows: <code className="break-all text-foreground">$env:CUA_DRIVER_RS_VERSION="{testedVersion}"; irm https://cua.ai/driver/install.ps1 | iex</code>. Leave the variable out for the newest release.
           </p>
           <p>
             macOS permissions: <code className="text-foreground">cua-driver permissions grant</code>. Approve every prompt for CuaDriver.app, then fully relaunch it if macOS asks.
@@ -747,6 +805,7 @@ export function DriverMachinesSettings() {
             <MachineSetupPanel
               key={host.id}
               host={host}
+              testedVersion={state.testedVersion}
               busy={busy}
               onRefresh={() => void run(`status:${host.id}`, () => rpc.call("refreshStatus", { hostId: host.id }))}
               onOpenInstall={() => {
@@ -764,17 +823,103 @@ export function DriverMachinesSettings() {
           ))}
         </div>
       )}
-      <ManualInstallHelp />
+      <ManualInstallHelp testedVersion={state.testedVersion} />
       {installHost === null ? null : (
         <InstallDialog
           host={installHost}
+          testedVersion={state.testedVersion}
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           installing={busy === `install:${installHost.id}`}
-          onInstall={() => run(`install:${installHost.id}`, () => rpc.call("installDriver", { hostId: installHost.id }))}
+          onInstall={(target) =>
+            run(`install:${installHost.id}`, () => rpc.call("installDriver", { hostId: installHost.id, target }))
+          }
         />
       )}
     </>
+  );
+}
+
+function ToolRow({ tool, busy, onChange }: { tool: ToolView; busy: boolean; onChange: (value: Exposure | "default") => void }) {
+  return (
+    <div className="group/row flex min-h-11 items-center gap-3 px-3 py-2" data-tool-row={tool.name}>
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <code className="truncate text-sm text-foreground">{tool.name}</code>
+        {tool.source === "unreviewed" ? (
+          <span className="shrink-0 rounded-full bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">new</span>
+        ) : null}
+        {!tool.groupEnabled ? (
+          <span className="shrink-0 text-xs text-muted-foreground">{tool.group} tools off</span>
+        ) : null}
+        <Hint label={tool.name}>{tool.summary || "No description."}</Hint>
+      </span>
+      <select
+        aria-label={`${tool.name} exposure`}
+        className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+        value={tool.override ?? "default"}
+        disabled={busy}
+        onChange={(event) => onChange(event.target.value as Exposure | "default")}
+      >
+        <option value="default">Default ({EXPOSURE_LABELS[tool.defaultExposure]})</option>
+        {(["tool", "call", "off"] as const).map((value) => (
+          <option key={value} value={value}>
+            {EXPOSURE_LABELS[value]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function AgentToolsSettings() {
+  const { rpc, state, error, busy, run } = useComputerUseState();
+  if (state === null) return <SectionState error={error} />;
+
+  const count = (exposure: Exposure) => state.tools.filter((tool) => tool.exposure === exposure).length;
+  const unreviewed = state.tools.filter((tool) => tool.source === "unreviewed" && tool.override === null);
+  const sections: Array<{ exposure: Exposure; title: string }> = [
+    { exposure: "tool", title: "Dedicated tools" },
+    { exposure: "call", title: "Reachable through cua_call" },
+    { exposure: "off", title: "Off" },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <p className="px-3 text-xs leading-relaxed text-muted-foreground">
+        Dedicated tools are offered in every session. Tools reachable through cua_call cost no prompt space until an agent asks for them. Off tools are refused everywhere, cua_call and <code>bb cua call</code> included. This decides what agents are offered; it is not a sandbox for agents that can run a shell.
+      </p>
+      {unreviewed.length > 0 ? (
+        <p className="px-3 text-xs leading-relaxed text-muted-foreground" data-unreviewed-tools>
+          {unreviewed.length} tool{unreviewed.length === 1 ? "" : "s"} from a newer Cua Driver {unreviewed.length === 1 ? "has" : "have"} not been reviewed: read-only ones are reachable through cua_call, the rest stay off.
+        </p>
+      ) : null}
+      <Disclosure
+        label="Customize individual tools"
+        meta={`${count("tool")} dedicated · ${count("call")} via cua_call · ${count("off")} off`}
+      >
+        <div className="mt-2 space-y-3">
+          {sections.map((section) => {
+            const tools = state.tools.filter((tool) => tool.exposure === section.exposure);
+            if (tools.length === 0) return null;
+            return (
+              <div key={section.exposure} role="group" aria-label={section.title}>
+                <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{section.title}</p>
+                <div className="divide-y divide-border/60">
+                  {tools.map((tool) => (
+                    <ToolRow
+                      key={tool.name}
+                      tool={tool}
+                      busy={busy !== null}
+                      onChange={(exposure) => void run(`tool:${tool.name}`, () => rpc.call("setExposure", { tool: tool.name, exposure }))}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Disclosure>
+    </div>
   );
 }
 
@@ -808,6 +953,12 @@ export default definePluginApp((app) => {
     id: "provider-overrides",
     title: "Provider overrides",
     component: ProviderOverridesSettings,
+  });
+  app.slots.settingsSection({
+    id: "agent-tools",
+    title: "Agent tools",
+    description: "Choose how agents reach each Cua Driver tool. Changes apply to the next session.",
+    component: AgentToolsSettings,
   });
   app.slots.settingsSection({
     id: "driver-machines",

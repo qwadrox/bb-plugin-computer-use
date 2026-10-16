@@ -58,7 +58,8 @@ export interface HostDependencies {
   spawnMcp(command: string, args: readonly string[]): McpChild;
   fetchText(url: string, signal: AbortSignal): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
-  spawnProcess(command: string, args: readonly string[]): ProcessChild;
+  /** `env` is added to the host's own environment. */
+  spawnProcess(command: string, args: readonly string[], env?: Readonly<Record<string, string>>): ProcessChild;
 }
 
 interface InstallContext {
@@ -196,6 +197,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
   let connecting: Promise<McpStdioClient> | null = null;
   let connectedArgs: string | null = null;
   let tools: CatalogTool[] = [];
+  let serverVersion: string | null = null;
   let lease: ExperimentalHostWorkerLease | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let lifecycleBound = false;
@@ -306,7 +308,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         }
       });
       try {
-        await next.initialize("bb-plugin-computer-use", PLUGIN_VERSION);
+        serverVersion = await next.initialize("bb-plugin-computer-use", PLUGIN_VERSION);
         tools = await next.listTools();
       } catch (error) {
         const stderr = next.recentStderr;
@@ -399,12 +401,18 @@ export function createCuaHostEntry(deps: HostDependencies) {
     emitInstall?.(installState);
   }
 
-  function runStep(command: string, args: readonly string[], step: string): Promise<number | null> {
+  function runStep(
+    command: string,
+    args: readonly string[],
+    step: string,
+    env?: Readonly<Record<string, string>>,
+  ): Promise<number | null> {
     return new Promise((resolve, reject) => {
-      pushInstallLine(`$ ${[command, ...args].join(" ")}`, step);
+      const prefix = Object.entries(env ?? {}).map(([key, value]) => `${key}=${value} `).join("");
+      pushInstallLine(`$ ${prefix}${[command, ...args].join(" ")}`, step);
       let child: ProcessChild;
       try {
-        child = deps.spawnProcess(command, args);
+        child = env === undefined ? deps.spawnProcess(command, args) : deps.spawnProcess(command, args, env);
       } catch (error) {
         reject(error instanceof Error ? error : new Error(String(error)));
         return;
@@ -420,7 +428,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
     });
   }
 
-  async function runInstall(context: InstallContext): Promise<void> {
+  async function runInstall(context: InstallContext, version: string | null): Promise<void> {
     const installLease = context.experimental_retainWorker();
     const isWindows = deps.platform === "win32";
     try {
@@ -438,9 +446,11 @@ export function createCuaHostEntry(deps: HostDependencies) {
         isWindows ? "cua-driver-install.ps1" : "cua-driver-install.sh",
       );
       await deps.writeFile(scriptPath, script);
+      // The official installer's own pin: an exact release instead of the newest.
+      const env = version === null ? undefined : { CUA_DRIVER_RS_VERSION: version };
       const code = isWindows
-        ? await runStep("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath], "install")
-        : await runStep("/bin/bash", [scriptPath], "install");
+        ? await runStep("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath], "install", env)
+        : await runStep("/bin/bash", [scriptPath], "install", env);
       if (code !== 0) {
         installState = { ...installState, exitCode: code };
         throw new Error(`installer exited with ${String(code)}`);
@@ -478,7 +488,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
     }
   }
 
-  function startInstall(context: InstallContext): InstallState {
+  function startInstall(context: InstallContext, version: string | null): InstallState {
     if (installState.running) return installState;
     if (normalizePlatform(deps.platform) === "other") {
       throw new Error(`Cua Driver has no installer for platform ${deps.platform}.`);
@@ -491,9 +501,10 @@ export function createCuaHostEntry(deps: HostDependencies) {
       tail: [],
       startedAt: new Date(deps.now()).toISOString(),
       finishedAt: null,
+      target: version,
     };
     emitInstall?.(installState);
-    void runInstall(context);
+    void runInstall(context, version);
     return installState;
   }
 
@@ -508,12 +519,12 @@ export function createCuaHostEntry(deps: HostDependencies) {
     contract: hostContract,
     experimental_signals: hostSignals,
     handlers: {
-      install(_input, context) {
+      install(input, context) {
         bindLifecycle(context.lifecycle.signal);
         emitInstall ??= (state) => {
           void context.experimental_emitSignal("installChanged", state);
         };
-        return startInstall(context);
+        return startInstall(context, input.version);
       },
       installState() {
         return installState;
@@ -546,7 +557,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
           void context.experimental_emitSignal("connectionChanged", { connected, reason });
         };
         await connect(context, input.grants);
-        return { tools };
+        return { tools, driverVersion: serverVersion };
       },
       async callTool(input, context): Promise<ToolCallResult> {
         bindLifecycle(context.lifecycle.signal);
@@ -612,11 +623,11 @@ export default createCuaHostEntry({
     return response.text();
   },
   writeFile: (path, content) => writeFile(path, content, { mode: 0o700 }),
-  spawnProcess(command, args) {
+  spawnProcess(command, args, env) {
     return spawn(command, [...args], {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
-      env: { ...process.env, CI: "1" },
+      env: { ...process.env, CI: "1", ...env },
     });
   },
 });

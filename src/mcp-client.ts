@@ -25,6 +25,7 @@ export interface McpToolDescriptor {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
 }
 
 interface Pending {
@@ -67,13 +68,16 @@ export class McpStdioClient {
     return () => this.closeListeners.delete(listener);
   }
 
-  async initialize(clientName: string, clientVersion: string): Promise<void> {
-    await this.request("initialize", {
+  /** Returns the server's own version (`serverInfo.version`), or null when it does not report one. */
+  async initialize(clientName: string, clientVersion: string): Promise<string | null> {
+    const result = (await this.request("initialize", {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: { name: clientName, version: clientVersion },
-    });
+    })) as { serverInfo?: { version?: unknown } } | null;
     this.notify("notifications/initialized", {});
+    const version = result?.serverInfo?.version;
+    return typeof version === "string" && version.length > 0 ? version : null;
   }
 
   async listTools(): Promise<McpToolDescriptor[]> {
@@ -95,6 +99,9 @@ export class McpStdioClient {
               typeof entry.inputSchema === "object" && entry.inputSchema !== null
                 ? (entry.inputSchema as Record<string, unknown>)
                 : { type: "object" },
+            ...(typeof entry.annotations === "object" && entry.annotations !== null
+              ? { annotations: entry.annotations as Record<string, unknown> }
+              : {}),
           });
         }
       }

@@ -53,6 +53,7 @@ export const catalogToolSchema = z
     name: z.string(),
     description: z.string(),
     inputSchema: z.record(z.string(), z.unknown()),
+    annotations: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 export type CatalogTool = z.infer<typeof catalogToolSchema>;
@@ -66,6 +67,8 @@ export const installStateSchema = z
     tail: z.array(z.string()),
     startedAt: z.string().nullable(),
     finishedAt: z.string().nullable(),
+    /** Exact driver version being installed; null for the newest release on the machine's channel. */
+    target: z.string().nullable().optional(),
   })
   .strict();
 export type InstallState = z.infer<typeof installStateSchema>;
@@ -78,6 +81,7 @@ export const IDLE_INSTALL_STATE: InstallState = {
   tail: [],
   startedAt: null,
   finishedAt: null,
+  target: null,
 };
 
 /**
@@ -88,9 +92,12 @@ export const DRIVER_GRANTS = ["existing-profile"] as const;
 export const driverGrantsSchema = z.array(z.enum(DRIVER_GRANTS)).max(DRIVER_GRANTS.length);
 export type DriverGrant = (typeof DRIVER_GRANTS)[number];
 
+/** An exact stable Cua Driver version such as 0.36.0. */
+export const driverVersionSchema = z.string().regex(/^\d+\.\d+\.\d+$/, "expected an x.y.z version");
+
 export const hostContract = defineRpcContract({
   install: {
-    input: z.null(),
+    input: z.object({ version: driverVersionSchema.nullable() }).strict(),
     output: installStateSchema,
   },
   installState: {
@@ -107,7 +114,13 @@ export const hostContract = defineRpcContract({
   },
   listTools: {
     input: z.object({ grants: driverGrantsSchema }).strict(),
-    output: z.object({ tools: z.array(catalogToolSchema) }).strict(),
+    output: z
+      .object({
+        tools: z.array(catalogToolSchema),
+        /** The driver's version as its MCP server reports it; null when it does not say. */
+        driverVersion: z.string().nullable().optional(),
+      })
+      .strict(),
   },
   callTool: {
     input: z
