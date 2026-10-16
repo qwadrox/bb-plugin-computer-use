@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **New icons:** the plugin icon is a window with a pointer and the letters
+  "bb"; the Browser Bridge for bb extension uses the same design on a purple
+  tile (store screenshot re-rendered).
+
 ## 0.4.1 - 2026-10-16
 
 - **The plugin icon shows up.** bb draws plugin icons as a mask in the theme
