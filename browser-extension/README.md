@@ -71,7 +71,18 @@ The store assigns its own id. After the first upload, add that id to
 re-run **Install bridge** so the native messaging manifests allow it. Bump
 `version` in `static/manifest.json` and `package.json` together.
 
-The store listing needs the permission reasons above and a privacy statement
-saying no user data is collected or sold. Icons are in `static/icons`;
+The store listing text, permission reasons and privacy answers are in
+[`store/LISTING.md`](store/LISTING.md), with the 1280x800 screenshot
+(`node scripts/render-screenshot.mjs <chrome-headless-shell>` renders it).
+
+Later versions go out through `.github/workflows/publish-extension.yml`: bump
+the version, commit, and push a tag `extension-v<version>` (plugin releases use
+`v*`). The workflow checks the tag against both files, packages the zip and
+uploads it with the repository secrets `EXTENSION_ID`, `PUBLISHER_ID`,
+`CLIENT_ID`, `CLIENT_SECRET` and `REFRESH_TOKEN` (a Chrome Web Store API OAuth
+client of the publisher account). A manual run can upload a draft without
+submitting it for review.
+
+Icons are in `static/icons`;
 `icon.svg` is the source, and `node scripts/render-icons.mjs <chrome-headless-shell>`
 renders the PNGs.

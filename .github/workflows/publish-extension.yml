@@ -1,0 +1,72 @@
+# Uploads Browser Bridge for bb to the Chrome Web Store on an extension-v* tag
+# (plugin releases use v*). The tag must match the version in
+# browser-extension/static/manifest.json and browser-extension/package.json.
+# A manual run publishes the newest extension-v* tag, or the one given.
+name: publish-extension
+on:
+  push:
+    tags: ["extension-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. extension-v0.1.0 (default: the newest extension-v* tag)"
+        required: false
+        default: ""
+      publish:
+        description: "Submit for review after the upload (off: upload as a draft only)"
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: publish-extension
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.tag }}
+        run: |
+          if [ "$EVENT" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$REQUESTED" ]; then
+            tag="$REQUESTED"
+          else
+            tag=$(git tag -l 'extension-v*' --sort=-v:refname | head -n 1)
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^extension-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::no usable extension-v* tag (got '$tag')"
+            exit 1
+          fi
+          git checkout --quiet "refs/tags/$tag"
+          version="${tag#extension-v}"
+          manifest=$(jq -r .version browser-extension/static/manifest.json)
+          package=$(jq -r .version browser-extension/package.json)
+          if [ "$manifest" != "$version" ] || [ "$package" != "$version" ]; then
+            echo "::error::$tag does not match manifest.json ($manifest) and package.json ($package)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package --workspace browser-extension
+      - uses: mnao305/chrome-extension-upload@f549d5d654694a7722d6abfa64c97409ad5e64c1 # v7.0.0
+        with:
+          file-path: browser-extension/browser-bridge-for-bb-${{ steps.tag.outputs.version }}.zip
+          extension-id: ${{ secrets.EXTENSION_ID }}
+          publisher-id: ${{ secrets.PUBLISHER_ID }}
+          client-id: ${{ secrets.CLIENT_ID }}
+          client-secret: ${{ secrets.CLIENT_SECRET }}
+          refresh-token: ${{ secrets.REFRESH_TOKEN }}
+          publish: ${{ github.event_name == 'push' || inputs.publish }}
