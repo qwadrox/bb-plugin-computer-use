@@ -53,6 +53,7 @@ import {
 } from "./src/policy.js";
 import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./src/snapshot.js";
 
+const MODE_KEY = "routing-mode";
 const OVERRIDES_KEY = "policy-overrides";
 const EXPOSURE_KEY = "tool-exposure";
 const STATUS_KEY_PREFIX = "driver-status:";
@@ -171,7 +172,6 @@ type ToolView = z.infer<typeof toolViewSchema>;
 type DriftView = z.infer<typeof driftViewSchema>;
 
 interface SettingsSnapshot {
-  mode: RoutingMode;
   browserTools: boolean;
   clipboardTools: boolean;
   signedInBrowserProfiles: boolean;
@@ -314,14 +314,6 @@ function isPermissionFailure(result: ToolCallResult): boolean {
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
-    mode: {
-      type: "select",
-      label: "Routing mode",
-      description:
-        "prefer-native: providers with their own computer use (Codex) keep it, everyone else gets Cua. cua-everywhere: Cua Driver for all providers. off: no Cua tools.",
-      options: [...ROUTING_MODES],
-      default: DEFAULT_POLICY.mode,
-    },
     browserTools: {
       type: "boolean",
       label: "Browser tools",
@@ -357,7 +349,6 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   function toSnapshot(values: {
-    mode: string;
     browserTools: boolean;
     clipboardTools: boolean;
     signedInBrowserProfiles: boolean;
@@ -365,7 +356,6 @@ export default async function plugin(bb: BbPluginApi) {
     sessionPrefix: string;
   }): SettingsSnapshot {
     return {
-      mode: ROUTING_MODES.includes(values.mode as RoutingMode) ? (values.mode as RoutingMode) : DEFAULT_POLICY.mode,
       browserTools: values.browserTools,
       clipboardTools: values.clipboardTools,
       signedInBrowserProfiles: values.signedInBrowserProfiles,
@@ -380,10 +370,28 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "settings" });
   });
 
-  let overrides = normalizePolicy({
-    mode: snapshot.mode,
-    overrides: await bb.storage.kv.get<unknown>(OVERRIDES_KEY),
-  }).overrides;
+  function readMode(value: unknown): RoutingMode | null {
+    return ROUTING_MODES.includes(value as RoutingMode) ? (value as RoutingMode) : null;
+  }
+
+  /**
+   * Up to 0.3 the mode was a declared setting, which bb also rendered in its
+   * Configuration form next to the Routing mode card. Carry a stored value over.
+   */
+  async function legacyMode(): Promise<RoutingMode | null> {
+    try {
+      const { values } = await bb.sdk.plugins.getSettings({ pluginId: bb.pluginId });
+      const legacy = readMode(values.mode);
+      if (legacy !== null) await bb.storage.kv.set(MODE_KEY, legacy);
+      return legacy;
+    } catch (error) {
+      bb.log.debug(`reading the old mode setting failed: ${errorMessage(error)}`);
+      return null;
+    }
+  }
+
+  let routingMode: RoutingMode = readMode(await bb.storage.kv.get<unknown>(MODE_KEY)) ?? (await legacyMode()) ?? DEFAULT_POLICY.mode;
+  let overrides = normalizePolicy({ mode: routingMode, overrides: await bb.storage.kv.get<unknown>(OVERRIDES_KEY) }).overrides;
   let exposureOverrides = normalizeOverrides(await bb.storage.kv.get<unknown>(EXPOSURE_KEY));
   const statusCache = new Map<string, DriverStatus>();
   const statusRefreshedAt = new Map<string, number>();
@@ -565,7 +573,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   function policy(): RoutingPolicy {
-    return { mode: snapshot.mode, overrides };
+    return { mode: routingMode, overrides };
   }
 
   async function refreshStatus(hostId: string, probeDaemon: boolean, signal?: AbortSignal): Promise<DriverStatus> {
@@ -1016,9 +1024,9 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "exposure" });
   }
 
-  async function saveMode(mode: RoutingMode): Promise<void> {
-    await bb.sdk.plugins.updateSettings({ pluginId: bb.pluginId, values: { mode } });
-    snapshot = { ...snapshot, mode };
+  async function saveMode(next: RoutingMode): Promise<void> {
+    await bb.storage.kv.set(MODE_KEY, next);
+    routingMode = next;
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "policy" });
   }
 

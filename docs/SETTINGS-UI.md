@@ -24,9 +24,10 @@ Rows stay on one line. Where a routing mode or checklist item has extra detail,
 a `?` icon slides in when the row is hovered and shows the detail in a tooltip
 on hover or keyboard focus. `bb cua tools` prints the same tool list.
 
-The routing radio card and the host-rendered `Routing mode` select edit the same
-setting. The card writes through `bb.sdk.plugins.updateSettings`, so both remain
-in sync and `bb plugin config` continues to work.
+The routing mode is not a declared setting. bb renders every declared setting
+in its configuration form and has no way to hide one, so a declared mode would
+appear twice: as that form's select and as the radio card. The mode lives in
+plugin storage instead; the card and `bb cua mode` both write it.
 
 ## Installer dialog
 

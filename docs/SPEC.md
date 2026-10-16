@@ -58,7 +58,6 @@ Declarative (`bb.settings.define`, editable via bb's form and
 
 | Key | Type | Default |
 | --- | --- | --- |
-| `mode` | select `prefer-native` / `cua-everywhere` / `off` | `prefer-native` |
 | `browserTools` | boolean | `true` |
 | `clipboardTools` | boolean | `true` |
 | `signedInBrowserProfiles` | boolean | `false` |
@@ -69,6 +68,7 @@ Plugin storage (`bb.storage.kv`):
 
 | Key | Value |
 | --- | --- |
+| `routing-mode` | `"prefer-native" \| "cua-everywhere" \| "off"`; absent means `prefer-native`. Set by the Routing mode card and `bb cua mode`. |
 | `policy-overrides` | `Record<providerId, "cua" \| "native" \| "off">` (inherit entries are removed) |
 | `driver-status:<hostId>` | last `DriverStatus` probe for that machine |
 | `catalog:<hostId>` | that machine's driver catalog and version |

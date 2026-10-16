@@ -9,6 +9,11 @@
   in the thread: allow once, allow for the thread, or don't allow. Built on
   `bb.ui.requestInput` with an `approve-tool` pending-interaction card; the
   Agent tools list marks these tools "asks first".
+- **Routing mode appears once.** It was a declared setting, so bb's
+  Configuration form showed a second `Routing mode` select above the plugin's
+  own card. The mode now lives in plugin storage; set it in the Routing mode
+  card or with `bb cua mode`. A mode saved by 0.3.0 carries over.
+  `bb plugin config computer-use set mode …` no longer applies.
 
 ## 0.3.0
 

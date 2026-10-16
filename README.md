@@ -131,9 +131,11 @@ machine's panel.
 | `off` | no Cua tools | no Cua tools |
 
 A per-provider override (`cua`, `native`, `off`, or `inherit`) beats the mode.
+Set both in the **Routing mode** and **Provider overrides** cards, or from the
+CLI:
 
 ```sh
-bb plugin config computer-use set mode cua-everywhere
+bb cua mode cua-everywhere
 bb cua policy codex native        # keep Codex on its own computer use
 bb cua policy pi cua
 bb cua policy                     # show the effective decision per provider

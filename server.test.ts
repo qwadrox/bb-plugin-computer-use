@@ -76,6 +76,8 @@ const NEWER_DRIVER: CatalogTool[] = [
 
 async function load(options: {
   settings?: Record<string, string | boolean>;
+  /** Values bb still stores for keys the plugin no longer declares. */
+  storedSettings?: Record<string, string | boolean>;
   status?: DriverStatus;
   toolResult?: ToolCallResult;
   /** Consumed in order before falling back to toolResult. */
@@ -99,7 +101,10 @@ async function load(options: {
           { id: "pi", displayName: "Pi", available: false },
         ],
       },
-      plugins: { updateSettings: async () => ({}) },
+      plugins: {
+        updateSettings: async () => ({}),
+        getSettings: async () => ({ ok: true, schema: {}, values: options.storedSettings ?? {} }),
+      },
     },
     experimental_callHostRpc: async ({ method, input, hostId }) => {
       hostCalls.push({ method, input, hostId });
@@ -153,7 +158,8 @@ describe("routing", () => {
   });
 
   it("honours cua-everywhere, off, and per-provider overrides from the CLI", async () => {
-    const { harness } = await load({ settings: { mode: "cua-everywhere" } });
+    const { harness } = await load();
+    expect((await harness.behavior.runCli(["mode", "cua-everywhere"])).stdout).toBe("mode: cua-everywhere");
     expect(names(await harness.behavior.resolveAgentConfiguration(context("codex")))).toContain("cua_click");
 
     const set = await harness.behavior.runCli(["policy", "codex", "native"]);
@@ -161,10 +167,17 @@ describe("routing", () => {
     expect(set.stdout).toMatch(/codex\s+native\s+override=native/);
     expect(names(await harness.behavior.resolveAgentConfiguration(context("codex")))).toEqual([]);
 
-    await harness.behavior.setSettings({ mode: "off" });
+    await harness.behavior.runCli(["mode", "off"]);
     expect(names(await harness.behavior.resolveAgentConfiguration(context("claude-code")))).toEqual([]);
     const rejected = await harness.behavior.runCli(["policy", "codex", "bogus"]);
     expect(rejected.exitCode).toBe(1);
+  });
+
+  it("keeps the mode out of bb's Configuration form and carries an old setting over", async () => {
+    const { bb, harness } = await load({ storedSettings: { mode: "off" } });
+    expect(Object.keys(harness.registrations.settingsDescriptors)).not.toContain("mode");
+    expect(names(await harness.behavior.resolveAgentConfiguration(context("claude-code")))).toEqual([]);
+    expect(await bb.storage.kv.get("routing-mode")).toBe("off");
   });
 });
 
