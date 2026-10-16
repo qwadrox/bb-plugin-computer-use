@@ -1006,7 +1006,7 @@ export function BrowserExtensionSettings() {
             void run("toggle", () => rpc.call("setBrowserExtension", { enabled }));
           }}
         />
-        <span className="text-sm font-medium">Offer browser_* tools</span>
+        <span className="text-sm font-medium">Offer browser_* tools (extension)</span>
         <Hint label="browser tools">
           Agents work in the tabs of your everyday browser, in the background, while you use other tabs. Tabs they open go into a purple Agent group. The browser shows a debugging bar while an agent is attached. Optional: nothing changes until you turn it on.
         </Hint>
@@ -1193,7 +1193,8 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "browser-extension",
     title: "Browser extension",
-    description: "Optional. Lets agents work in the tabs of your own browser, in the background.",
+    description:
+      "Optional. Agents work in any tab of your everyday browser through the Browser Bridge for bb extension. Without it they still have Cua Driver's browser window tools.",
     component: BrowserExtensionSettings,
   });
   app.slots.settingsSection({

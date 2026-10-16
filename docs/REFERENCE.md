@@ -103,9 +103,9 @@ do on the machine, Cua Driver's own permission mode decides.
 
 | Setting | Default | Effect |
 | --- | --- | --- |
-| Browser tools | on | Off turns every browser tool off, `cua_call` included. |
+| Browser window tools | on | Cua Driver's `cua_browser_*` tools, no extension needed. Off turns the group off, `cua_call` included; the extension's `browser_*` tools have their own switch. |
 | Clipboard tools | on | Off turns `clipboard_read` / `clipboard_write` off, `cua_call` included. |
-| Signed-in browser profiles | off | Lets browser tools attach to a signed-in Chrome, Edge or Brave window (see [Signed-in browser profiles](#signed-in-browser-profiles)). |
+| Signed-in browser profiles | off | Lets the browser window tools attach to a signed-in Chrome, Edge or Brave window (see [Signed-in browser profiles](#signed-in-browser-profiles)). |
 | Browser extension | off | Offers the `browser_*` tools of the optional extension (see [Browser extension](#browser-extension-optional)). Set in its own card or with `bb cua browser on\|off`. |
 | Ask before sensitive actions | off | Asks in the thread before a sensitive call runs (see [Permissions and safety](#permissions-and-safety)). Off runs them without asking. |
 | Session label prefix | `bb` | Each active thread run gets a unique label beginning with `<prefix>-<threadId>`; the label shows in the agent cursor badge. |
@@ -145,7 +145,7 @@ pauses agents until you resume them from the extension.
 Nothing changes until you turn it on:
 
 1. **Settings → Plugins → Desktop & Browser Agent → Browser extension**: tick **Offer
-   browser_\* tools**, then **Install bridge** on the machine. The bridge is a
+   browser_\* tools (extension)**, then **Install bridge** on the machine. The bridge is a
    small native messaging host (`~/Library/Application Support/agent-browser-bridge`
    on macOS, `~/.local/share/agent-browser-bridge` on Linux) plus one manifest
    in each Chromium browser's `NativeMessagingHosts` folder, so the extension

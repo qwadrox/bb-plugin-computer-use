@@ -365,8 +365,9 @@ export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
     browserTools: {
       type: "boolean",
-      label: "Browser tools",
-      description: "Offer Cua Driver's browser tools (get_browser_state, browser_click, browser_type, ...). Off turns the whole group off, cua_call included.",
+      label: "Browser window tools (Cua Driver)",
+      description:
+        "Offer Cua Driver's cua_browser_* tools, which work in a Chrome, Edge, Brave or Electron window without an extension. Off turns the group off, cua_call included. The extension's browser_* tools have their own switch under Browser extension.",
       default: true,
     },
     clipboardTools: {
@@ -379,7 +380,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Signed-in browser profiles",
       description:
-        "Let browser tools attach to an existing, signed-in Chrome, Edge, or Brave window and work in a tab while you use other tabs. The first attach brings the browser to the front once. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
+        "Let the browser window tools (Cua Driver) attach to an existing, signed-in Chrome, Edge, or Brave window and work in a tab while you use other tabs. The first attach brings the browser to the front once. The browser extension does not need this. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
       default: false,
     },
     confirmSensitiveTools: {

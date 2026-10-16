@@ -111,9 +111,10 @@ returned refs. If binding is refused, `detail.next_call` names the
 - A browser people use daily is a signed-in profile. Attaching needs the
   **Signed-in browser profiles** setting; if the tool says it is off, ask the
   user instead of working around it.
-- Browser tools act on one tab by `tab_id`, whichever tab the user is
-  looking at, so the user can keep working in other tabs. Window tools see
-  only the tab showing in that window; prefer browser tools for web pages.
+- `cua_browser_*` tools act on one tab by `tab_id`, whichever tab the user
+  is looking at, so the user can keep working in other tabs. Window tools
+  see only the tab showing in that window; prefer `cua_browser_*` tools for
+  web pages, and the `browser_*` extension tools above when you have them.
 - If `cua_browser_prepare` refuses with `background_unavailable`, call it once
   more with `delivery_mode: "foreground"` and tell the user in one line: the
   browser comes to the front once to approve the connection, then their app

@@ -43,12 +43,26 @@ team. See [NOTICE.md](NOTICE.md).
 Needs bb 0.39 or later, and macOS 14+, Windows 10/11, or Linux (X11). For
 manual installs, see the [reference](docs/REFERENCE.md#requirements).
 
+## Two ways to work in a browser
+
+| | Browser window tools | Browser extension (optional) |
+| --- | --- | --- |
+| Tools | `cua_browser_*` | `browser_*` |
+| Runs through | Cua Driver, no extension | Browser Bridge for bb extension |
+| Reaches | one Chrome, Edge, Brave or Electron window | any tab of your everyday browser |
+| Your signed-in profile | only with **Signed-in browser profiles** on | always |
+| Default | on | off |
+
+Both work in the background. With the extension on, agents prefer it for web
+pages; the window tools remain for Electron apps and browsers without the
+extension.
+
 ## Browser extension (optional)
 
 Off until you turn it on:
 
 1. In **Settings → Plugins → Desktop & Browser Agent → Browser extension**, tick **Offer
-   browser_\* tools** and select **Install bridge**.
+   browser_\* tools (extension)** and select **Install bridge**.
 2. Add [Browser Bridge for bb](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc) from the Chrome Web
    Store (it works in Brave and Edge too). To run a local build instead, run
    `npm run build:extension`, open `brave://extensions` or
@@ -63,8 +77,8 @@ Off until you turn it on:
 | --- | --- | --- |
 | Routing mode | Prefer provider tools | Which providers get Cua Driver tools |
 | Agent tools | reviewed defaults | Turn individual tools on or off |
-| Browser tools, Clipboard tools | on | Turn whole tool groups off |
-| Signed-in browser profiles | off | Let Cua Driver attach to your logged-in browser |
+| Browser window tools, Clipboard tools | on | Turn Cua Driver's `cua_browser_*` or clipboard tools off |
+| Signed-in browser profiles | off | Let the browser window tools attach to your logged-in browser |
 | Browser extension | off | Offer the extension's `browser_*` tools |
 | Ask before sensitive actions | off | Ask in the thread before sensitive calls |
 
