@@ -2,7 +2,9 @@ import { connect } from "node:net";
 import { access, chmod, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BRIDGE_SCRIPT } from "./browser-bridge-script.js";
+import type { HostErrorCode } from "../browser-extension/src/shared.js";
 import type { BrowserBridgeState, BrowserCallResult } from "./contract.js";
+import { errorMessage } from "./errors.js";
 import { EXTENSION_IDS } from "./links.js";
 
 /** Must match NATIVE_HOST in browser-extension/src/shared.ts. */
@@ -214,34 +216,32 @@ export async function callBrowser(
   params: Record<string, unknown>,
   options: { browser?: string; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<BrowserCallResult> {
-  if (!layout.supported) return { ok: false, code: "unsupported", message: "The browser extension works on macOS and Linux." };
+  const fail = (code: HostErrorCode, message: string): BrowserCallResult => ({ ok: false, code, message });
+  if (!layout.supported) return fail("unsupported", "The browser extension works on macOS and Linux.");
   if (!(await exists(layout.script))) {
-    return { ok: false, code: "not_installed", message: "The browser bridge is not installed on this machine." };
+    return fail("not_installed", "The browser bridge is not installed on this machine.");
   }
   const live = await liveSockets(layout);
   if (live.length === 0) {
-    return {
-      ok: false,
-      code: "not_connected",
-      message: "No browser with the Browser Bridge for bb extension is connected. The browser may be closed, or the extension not installed.",
-    };
+    return fail(
+      "not_connected",
+      "No browser with the Browser Bridge for bb extension is connected. The browser may be closed, or the extension not installed.",
+    );
   }
   // A blank browser name counts as none given.
   const wanted = options.browser?.trim().toLowerCase() || undefined;
   const matches = wanted ? live.filter((entry) => entry.hello.browser.toLowerCase() === wanted) : live;
   if (matches.length === 0) {
-    return {
-      ok: false,
-      code: "no_such_browser",
-      message: `${options.browser} is not connected. Connected: ${live.map((entry) => entry.hello.browser).join(", ")}.`,
-    };
+    return fail(
+      "no_such_browser",
+      `${options.browser} is not connected. Connected: ${live.map((entry) => entry.hello.browser).join(", ")}.`,
+    );
   }
   if (matches.length > 1 && wanted === undefined) {
-    return {
-      ok: false,
-      code: "several_browsers",
-      message: `Several browsers are connected (${live.map((entry) => entry.hello.browser).join(", ")}). Pass browser to choose one.`,
-    };
+    return fail(
+      "several_browsers",
+      `Several browsers are connected (${live.map((entry) => entry.hello.browser).join(", ")}). Pass browser to choose one.`,
+    );
   }
   const target = matches[0]!;
   try {
@@ -251,6 +251,6 @@ export async function callBrowser(
     }
     return { ok: true, browser: target.hello.browser, result: reply.result };
   } catch (error) {
-    return { ok: false, code: "bridge_failed", message: error instanceof Error ? error.message : String(error) };
+    return fail("bridge_failed", errorMessage(error));
   }
 }

@@ -15,6 +15,9 @@ import {
 import {
   GROUP_TITLE,
   NATIVE_HOST,
+  type BridgeErrorCode,
+  type BridgeParams,
+  type BridgeRequest,
   type BridgeStatus,
   type PopupRequest,
   type StoredSettings,
@@ -31,7 +34,7 @@ const PAUSED_KEY = "paused";
 
 class BridgeError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: BridgeErrorCode,
     message: string,
   ) {
     super(message);
@@ -111,7 +114,8 @@ async function handleHostMessage(message: unknown): Promise<void> {
   const request = message as Partial<HostRequest>;
   if (typeof request.id !== "string" || typeof request.method !== "string") return;
   try {
-    const result = await dispatch(request.method, request.params ?? {});
+    // The plugin sends the methods and params of BridgeRequest; any other method reaches dispatch's default case.
+    const result = await dispatch({ method: request.method, params: request.params ?? {} } as BridgeRequest);
     port?.postMessage({ id: request.id, result });
   } catch (error) {
     const code = error instanceof BridgeError ? error.code : "failed";
@@ -144,12 +148,13 @@ async function assertNotPaused(): Promise<void> {
   }
 }
 
-async function allowedTab(tabId: unknown): Promise<chrome.tabs.Tab> {
+/** Checks that agents may use a tab, and returns its id. */
+async function allowedTab(tabId: unknown): Promise<number> {
   await assertNotPaused();
   if (typeof tabId !== "number") throw new BridgeError("invalid_arguments", "tab_id must be a number from browser_tabs or browser_open.");
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (tab === null) throw new BridgeError("tab_closed", `Tab ${tabId} is closed. browser_tabs lists the open tabs.`);
-  return tab;
+  return tabId;
 }
 
 function tabSummary(tab: chrome.tabs.Tab) {
@@ -160,10 +165,18 @@ function tabSummary(tab: chrome.tabs.Tab) {
 
 const attached = new Map<number, number>();
 
+/** The main frame's isolated world per tab, so evaluate does not create one on every call. */
+interface World {
+  frameId: string;
+  contextId: number;
+}
+const worlds = new Map<number, World>();
+
 /** Detaches the debugger from every tab agents are using. */
 async function detachAll(): Promise<void> {
   for (const tabId of [...attached.keys()]) {
     attached.delete(tabId);
+    worlds.delete(tabId);
     await chrome.debugger.detach({ tabId }).catch(() => undefined);
   }
 }
@@ -171,6 +184,7 @@ async function detachAll(): Promise<void> {
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return;
   attached.delete(source.tabId);
+  worlds.delete(source.tabId);
   if (reason === "canceled_by_user") {
     // The user dismissed the "started debugging this browser" bar: stop all agent work.
     void chrome.storage.local.set({ [PAUSED_KEY]: true });
@@ -180,6 +194,12 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   attached.delete(tabId);
+  worlds.delete(tabId);
+});
+
+// A new document replaces the page's isolated world. A call that raced the load recovers in evaluate.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") worlds.delete(tabId);
 });
 
 setInterval(() => {
@@ -187,12 +207,13 @@ setInterval(() => {
   for (const [tabId, used] of attached) {
     if (now - used > IDLE_DETACH_MS) {
       attached.delete(tabId);
+      worlds.delete(tabId);
       void chrome.debugger.detach({ tabId }).catch(() => undefined);
     }
   }
 }, 15_000);
 
-function withTimeout<T>(promise: Promise<T>, ms: number, code: string, message: string): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number, code: BridgeErrorCode, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new BridgeError(code, message)), ms);
     promise.then(
@@ -244,25 +265,28 @@ function cdp<T = Record<string, unknown>>(
   );
 }
 
-async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg?: unknown): Promise<T> {
-  await attach(tabId);
+async function worldOf(tabId: number): Promise<World> {
+  const cached = worlds.get(tabId);
+  if (cached !== undefined) return cached;
   const tree = await cdp<{ frameTree: { frame: { id: string } } }>(tabId, "Page.getFrameTree");
+  const frameId = tree.frameTree.frame.id;
   const world = await cdp<{ executionContextId: number }>(tabId, "Page.createIsolatedWorld", {
-    frameId: tree.frameTree.frame.id,
+    frameId,
     worldName: "agent-browser-bridge",
   });
-  // The page helpers are defined ahead of fn, which may call them (see page.ts).
-  const expression = `(() => {
-    const pageRoots = ${pageRoots.toString()};
-    const findRef = ${findRef.toString()};
-    return (${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)});
-  })()`;
+  const entry = { frameId, contextId: world.executionContextId };
+  worlds.set(tabId, entry);
+  return entry;
+}
+
+async function evaluateIn<T>(tabId: number, expression: string): Promise<T> {
+  const world = await worldOf(tabId);
   const response = await cdp<{
     result: { value?: unknown };
     exceptionDetails?: { text: string; exception?: { description?: string } };
   }>(tabId, "Runtime.evaluate", {
     expression,
-    contextId: world.executionContextId,
+    contextId: world.contextId,
     returnByValue: true,
     awaitPromise: true,
   });
@@ -270,6 +294,24 @@ async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg
     throw new BridgeError("page_error", response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
   }
   return response.result.value as T;
+}
+
+async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg?: unknown): Promise<T> {
+  await attach(tabId);
+  // The page helpers are defined ahead of fn, which may call them (see page.ts).
+  const expression = `(() => {
+    const pageRoots = ${pageRoots.toString()};
+    const findRef = ${findRef.toString()};
+    return (${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)});
+  })()`;
+  try {
+    return await evaluateIn<T>(tabId, expression);
+  } catch (error) {
+    // The context was destroyed by a navigation the cache has not seen yet: make a fresh world and try once more.
+    if (error instanceof BridgeError || !(error instanceof Error) || !/Cannot find context/i.test(error.message)) throw error;
+    worlds.delete(tabId);
+    return evaluateIn<T>(tabId, expression);
+  }
 }
 
 async function waitForLoad(tabId: number): Promise<void> {
@@ -368,7 +410,7 @@ function webUrl(raw: string): string {
   return url.href;
 }
 
-async function dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
+async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
   switch (method) {
     case "status": {
       const settings = await readSettings();
@@ -390,9 +432,9 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       return tabSummary(await chrome.tabs.get(tab.id));
     }
     case "read": {
-      const tab = await allowedTab(params.tab_id);
-      await waitForLoad(tab.id!);
-      const result = await evaluate<SnapshotResult>(tab.id!, snapshotPage, {
+      const tabId = await allowedTab(params.tab_id);
+      await waitForLoad(tabId);
+      const result = await evaluate<SnapshotResult>(tabId, snapshotPage, {
         query: typeof params.query === "string" && params.query !== "" ? params.query : null,
         offset: typeof params.offset === "number" ? params.offset : 0,
         maxChars: typeof params.max_chars === "number" ? Math.min(Math.max(params.max_chars, 1_000), 60_000) : 15_000,
@@ -400,61 +442,61 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       return result;
     }
     case "click": {
-      const tab = await allowedTab(params.tab_id);
+      const tabId = await allowedTab(params.tab_id);
       const ref = stringParam(params, "ref");
-      const located = await evaluate<Located>(tab.id!, locateRef, ref);
+      const located = await evaluate<Located>(tabId, locateRef, ref);
       if (!located.found) throw staleRef(ref);
       let route = "trusted";
       try {
         const point = { x: located.x, y: located.y };
-        await cdp(tab.id!, "Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, INPUT_TIMEOUT_MS);
-        await cdp(tab.id!, "Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, INPUT_TIMEOUT_MS);
-        await cdp(tab.id!, "Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, INPUT_TIMEOUT_MS);
+        await cdp(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, INPUT_TIMEOUT_MS);
+        await cdp(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, INPUT_TIMEOUT_MS);
+        await cdp(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, INPUT_TIMEOUT_MS);
       } catch (error) {
         if (!(error instanceof BridgeError) || error.code !== "timeout") throw error;
         route = "dom";
-        if (!(await evaluate<boolean>(tab.id!, domClick, ref))) throw staleRef(ref);
+        if (!(await evaluate<boolean>(tabId, domClick, ref))) throw staleRef(ref);
       }
-      const after = await settle(tab.id!);
+      const after = await settle(tabId);
       return { route, covered_by: located.covered, ...after };
     }
     case "type": {
-      const tab = await allowedTab(params.tab_id);
+      const tabId = await allowedTab(params.tab_id);
       const ref = stringParam(params, "ref");
       const text = typeof params.text === "string" ? params.text : "";
       const replace = params.replace === true;
-      const focused = await evaluate<{ found: boolean; editable: boolean }>(tab.id!, focusRef, { ref, replace });
+      const focused = await evaluate<{ found: boolean; editable: boolean }>(tabId, focusRef, { ref, replace });
       if (!focused.found) throw staleRef(ref);
       if (!focused.editable) throw new BridgeError("not_editable", `Ref ${ref} is not a text field. Click it or pick another ref.`);
-      const before = await evaluate<{ value: string }>(tab.id!, readValue, ref);
+      const before = await evaluate<{ value: string }>(tabId, readValue, ref);
       let route = "trusted";
       try {
-        if (text !== "") await cdp(tab.id!, "Input.insertText", { text }, INPUT_TIMEOUT_MS);
-        else if (replace) await pressKey(tab.id!, "Backspace");
+        if (text !== "") await cdp(tabId, "Input.insertText", { text }, INPUT_TIMEOUT_MS);
+        else if (replace) await pressKey(tabId, "Backspace");
       } catch (error) {
         if (!(error instanceof BridgeError) || error.code !== "timeout") throw error;
         route = "dom";
       }
-      let after = await evaluate<{ value: string; secret: boolean }>(tab.id!, readValue, ref);
+      let after = await evaluate<{ value: string; secret: boolean }>(tabId, readValue, ref);
       if (route === "trusted" && text !== "" && after.value === before.value && !after.secret) route = "dom";
       if (route === "dom") {
-        await evaluate<boolean>(tab.id!, setValue, { ref, text, replace });
-        after = await evaluate<{ value: string; secret: boolean }>(tab.id!, readValue, ref);
+        await evaluate<boolean>(tabId, setValue, { ref, text, replace });
+        after = await evaluate<{ value: string; secret: boolean }>(tabId, readValue, ref);
       }
-      if (params.submit === true) await pressKey(tab.id!, "Enter");
-      const settled = params.submit === true ? await settle(tab.id!) : null;
+      if (params.submit === true) await pressKey(tabId, "Enter");
+      const settled = params.submit === true ? await settle(tabId) : null;
       return { route, value: after.secret ? "(hidden)" : after.value.slice(0, 500), ...(settled ?? {}) };
     }
     case "key": {
-      const tab = await allowedTab(params.tab_id);
-      await attach(tab.id!);
-      await pressKey(tab.id!, stringParam(params, "key"));
-      return settle(tab.id!);
+      const tabId = await allowedTab(params.tab_id);
+      await attach(tabId);
+      await pressKey(tabId, stringParam(params, "key"));
+      return settle(tabId);
     }
     case "select": {
-      const tab = await allowedTab(params.tab_id);
+      const tabId = await allowedTab(params.tab_id);
       const ref = stringParam(params, "ref");
-      const result = await evaluate<{ found: boolean; chosen: string | null; options: string[] }>(tab.id!, selectOption, {
+      const result = await evaluate<{ found: boolean; chosen: string | null; options: string[] }>(tabId, selectOption, {
         ref,
         option: stringParam(params, "option"),
       });
@@ -465,15 +507,15 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
           result.options.length > 0 ? `No option matches. Options: ${result.options.slice(0, 40).join(" | ")}` : `Ref ${ref} is not a <select>.`,
         );
       }
-      return { chosen: result.chosen, ...(await settle(tab.id!)) };
+      return { chosen: result.chosen, ...(await settle(tabId)) };
     }
     case "scroll": {
-      const tab = await allowedTab(params.tab_id);
+      const tabId = await allowedTab(params.tab_id);
       const ref = typeof params.ref === "string" && params.ref !== "" ? params.ref : null;
       const direction = params.direction === "up" ? -1 : 1;
       const amount = typeof params.amount === "number" ? params.amount : 0.8;
-      const height = await evaluate<number>(tab.id!, () => innerHeight);
-      const result = await evaluate<{ found: boolean; scrollY: number }>(tab.id!, scrollPage, {
+      const height = await evaluate<number>(tabId, () => innerHeight);
+      const result = await evaluate<{ found: boolean; scrollY: number }>(tabId, scrollPage, {
         ref,
         deltaY: Math.round(direction * amount * height),
       });
@@ -481,25 +523,25 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       return { scroll_y: result.scrollY };
     }
     case "navigate": {
-      const tab = await allowedTab(params.tab_id);
+      const tabId = await allowedTab(params.tab_id);
       const target = stringParam(params, "url");
       if (target === "back" || target === "forward") {
-        await (target === "back" ? chrome.tabs.goBack(tab.id!) : chrome.tabs.goForward(tab.id!)).catch(() => {
+        await (target === "back" ? chrome.tabs.goBack(tabId) : chrome.tabs.goForward(tabId)).catch(() => {
           throw new BridgeError("no_history", `There is no page to go ${target} to.`);
         });
       } else if (target === "reload") {
-        await chrome.tabs.reload(tab.id!);
+        await chrome.tabs.reload(tabId);
       } else {
-        await chrome.tabs.update(tab.id!, { url: webUrl(target) });
+        await chrome.tabs.update(tabId, { url: webUrl(target) });
       }
-      return settle(tab.id!);
+      return settle(tabId);
     }
     case "screenshot": {
-      const tab = await allowedTab(params.tab_id);
-      await attach(tab.id!);
+      const tabId = await allowedTab(params.tab_id);
+      await attach(tabId);
       try {
         const shot = await cdp<{ data: string }>(
-          tab.id!,
+          tabId,
           "Page.captureScreenshot",
           { format: "jpeg", quality: 70, captureBeyondViewport: false },
           SCREENSHOT_TIMEOUT_MS,
@@ -516,12 +558,15 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       }
     }
     case "close": {
-      const tab = await allowedTab(params.tab_id);
-      await chrome.tabs.remove(tab.id!);
-      return { closed: tab.id };
+      const tabId = await allowedTab(params.tab_id);
+      await chrome.tabs.remove(tabId);
+      return { closed: tabId };
     }
-    default:
-      throw new BridgeError("unknown_method", `Unknown method ${method}.`);
+    default: {
+      // Fails to compile if a BridgeMethod has no case. At run time this is a method the plugin does not know.
+      const unhandled: never = method;
+      throw new BridgeError("unknown_method", `Unknown method ${String(unhandled)}.`);
+    }
   }
 }
 

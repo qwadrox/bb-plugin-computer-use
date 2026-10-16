@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { ToolLabels } from "./catalog.js";
 import type { BrowserCallResult, ToolCallResult } from "./contract.js";
+// Types only: the extension's shared module is bundled into the extension, not the plugin server.
+import type { BridgeParams, BridgeToolMethod, HostErrorCode } from "../browser-extension/src/shared.js";
 
 /**
  * Agent tools backed by the optional Browser Bridge for bb extension. Each one
@@ -8,7 +10,7 @@ import type { BrowserCallResult, ToolCallResult } from "./contract.js";
  */
 export interface BrowserTool {
   name: string;
-  method: string;
+  method: BridgeToolMethod;
   description: string;
   parameters: z.ZodObject<z.ZodRawShape>;
   labels: ToolLabels;
@@ -22,13 +24,14 @@ const browser = z
 const tabId = z.number().int().describe("Tab id from browser_tabs or browser_open");
 const ref = z.string().min(1).describe("Element ref such as e12 from the latest browser_read of this tab");
 
+// Each `satisfies` checks the schema against the params the extension takes for its method.
 export const BROWSER_TOOLS: readonly BrowserTool[] = [
   {
     name: "browser_tabs",
     method: "tabs",
     description:
       "List the open tabs of the user's own browser with tab ids, titles and URLs, and whether agents are paused.",
-    parameters: z.object({ browser }),
+    parameters: z.object({ browser }) satisfies z.ZodType<BridgeParams["tabs"]>,
     labels: { pending: "Listing browser tabs", completed: "Listed browser tabs" },
   },
   {
@@ -36,7 +39,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     method: "open",
     description:
       "Open a URL in a new background tab of the user's browser, in its purple Agent tab group. The user's own tab stays in front. Returns its tab_id.",
-    parameters: z.object({ url: z.string().min(1).describe("http(s) URL, or about:blank"), browser }),
+    parameters: z.object({ url: z.string().min(1).describe("http(s) URL, or about:blank"), browser }) satisfies z.ZodType<BridgeParams["open"]>,
     labels: { pending: "Opening a tab", completed: "Opened a tab" },
   },
   {
@@ -50,14 +53,14 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
       offset: z.number().int().min(0).optional().describe("Character offset from a previous read's next offset"),
       max_chars: z.number().int().min(1_000).max(60_000).optional().describe("Default 15000"),
       browser,
-    }),
+    }) satisfies z.ZodType<BridgeParams["read"]>,
     labels: { pending: "Reading the page", completed: "Read the page" },
   },
   {
     name: "browser_click",
     method: "click",
     description: "Click an element of a tab by ref. Works while the tab is in the background; returns the page's URL and title afterwards.",
-    parameters: z.object({ tab_id: tabId, ref, browser }),
+    parameters: z.object({ tab_id: tabId, ref, browser }) satisfies z.ZodType<BridgeParams["click"]>,
     labels: { pending: "Clicking in the browser", completed: "Clicked in the browser" },
   },
   {
@@ -72,21 +75,21 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
       replace: z.boolean().optional(),
       submit: z.boolean().optional(),
       browser,
-    }),
+    }) satisfies z.ZodType<BridgeParams["type"]>,
     labels: { pending: "Typing in the browser", completed: "Typed in the browser" },
   },
   {
     name: "browser_select",
     method: "select",
     description: "Choose an option of a <select> in a tab by ref, matching the option's label or value.",
-    parameters: z.object({ tab_id: tabId, ref, option: z.string().min(1), browser }),
+    parameters: z.object({ tab_id: tabId, ref, option: z.string().min(1), browser }) satisfies z.ZodType<BridgeParams["select"]>,
     labels: { pending: "Choosing an option", completed: "Chose an option" },
   },
   {
     name: "browser_key",
     method: "key",
     description: "Press a key or combination in a tab, such as Enter, Escape, Tab, ArrowDown, or Meta+A.",
-    parameters: z.object({ tab_id: tabId, key: z.string().min(1), browser }),
+    parameters: z.object({ tab_id: tabId, key: z.string().min(1), browser }) satisfies z.ZodType<BridgeParams["key"]>,
     labels: { pending: "Pressing a key", completed: "Pressed a key" },
   },
   {
@@ -100,7 +103,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
       amount: z.number().min(0.1).max(10).optional(),
       ref: ref.optional(),
       browser,
-    }),
+    }) satisfies z.ZodType<BridgeParams["scroll"]>,
     labels: { pending: "Scrolling", completed: "Scrolled" },
   },
   {
@@ -111,7 +114,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
       tab_id: tabId,
       url: z.string().min(1).describe("http(s) URL, about:blank, back, forward, or reload"),
       browser,
-    }),
+    }) satisfies z.ZodType<BridgeParams["navigate"]>,
     labels: { pending: "Navigating", completed: "Navigated" },
   },
   {
@@ -119,14 +122,14 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     method: "screenshot",
     description:
       "Take a JPEG of a tab's viewport. A tab in the background may not be drawn; then read it with browser_read instead.",
-    parameters: z.object({ tab_id: tabId, browser }),
+    parameters: z.object({ tab_id: tabId, browser }) satisfies z.ZodType<BridgeParams["screenshot"]>,
     labels: { pending: "Taking a screenshot", completed: "Took a screenshot" },
   },
   {
     name: "browser_close",
     method: "close",
     description: "Close a tab, for example one this agent opened and no longer needs.",
-    parameters: z.object({ tab_id: tabId, browser }),
+    parameters: z.object({ tab_id: tabId, browser }) satisfies z.ZodType<BridgeParams["close"]>,
     labels: { pending: "Closing a tab", completed: "Closed a tab" },
   },
 ];
@@ -134,7 +137,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
 export const BROWSER_TOOL_NAMES: readonly string[] = BROWSER_TOOLS.map((tool) => tool.name);
 
 /** Codes that mean the user has setup to do, not the agent. */
-const SETUP_CODES = new Set(["unsupported", "not_installed", "not_connected"]);
+const SETUP_CODES = new Set<string>(["unsupported", "not_installed", "not_connected"] satisfies HostErrorCode[]);
 
 function text(value: string, isError = false): ToolCallResult {
   return { content: [{ type: "text", text: value }], isError };
