@@ -8,7 +8,10 @@
   browser's debugger API, so Brave no longer needs Cua Driver's
   remote-debugging attach. Off by default: turn it on in the new **Browser
   extension** card (or `bb cua browser on`), install the native messaging
-  bridge there (`bb cua browser install`), and load the unpacked extension.
+  bridge there (`bb cua browser install`), and add the extension from the
+  [Chrome Web Store](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc)
+  (or load a local build unpacked; the bridge accepts both ids). New versions
+  are published by the `publish-extension` workflow on an `extension-v*` tag.
   Adds the `browser_*` tools (tabs, open, read, click, type, select, key,
   scroll, navigate, screenshot, close). Agents may use any tab; tabs they
   open go into a purple **Agent** group. The toolbar popup pauses agents,

@@ -154,6 +154,8 @@ const hostInput = z.object({ hostId: z.string().min(1) }).strict();
 /** Must match the unpacked build's id (the manifest "key"); see src/browser-host.ts. */
 export const BROWSER_EXTENSION_ID = "apeidchlabamkkpmahikoiingkhdcagf";
 
+export const BROWSER_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc";
+
 const browserViewSchema = z
   .object({
     enabled: z.boolean(),
@@ -1500,7 +1502,7 @@ export default async function plugin(bb: BbPluginApi) {
               .filter((entry) => entry.detected)
               .map((entry) => `  ${entry.name}: ${entry.registered ? "registered" : "not registered"}`),
             `Connected: ${bridge.connections.length === 0 ? "none" : bridge.connections.map((entry) => `${entry.browser} ${entry.version} (extension ${entry.extension})`).join(", ")}`,
-            `Extension id: ${BROWSER_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
+            `Chrome Web Store: ${BROWSER_EXTENSION_STORE_URL}\nExtension id: ${BROWSER_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
           ];
           return { exitCode: 0, stdout: lines.join("\n") };
         }

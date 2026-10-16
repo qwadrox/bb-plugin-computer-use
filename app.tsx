@@ -31,6 +31,7 @@ type BrowserView = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContrac
   : never;
 
 const CUA_DOCS_URL = "https://cua.ai/docs";
+const EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc";
 const CUA_INSTALL_URL = "https://cua.ai/docs/how-to-guides/driver/install";
 const CUA_SOURCE_URL = "https://github.com/trycua/cua";
 
@@ -1058,7 +1059,11 @@ export function BrowserExtensionSettings() {
           <ol className="list-decimal space-y-1.5 pl-5">
             <li>Install the bridge above. It lets the extension talk to bb on this machine; Remove bridge undoes it.</li>
             <li>
-              Open <code className="text-foreground">brave://extensions</code> or <code className="text-foreground">chrome://extensions</code>, turn on Developer mode, choose Load unpacked, and pick
+              Add{" "}
+              <a className={linkClass} href={EXTENSION_STORE_URL} target="_blank" rel="noreferrer">
+                Browser Bridge for bb from the Chrome Web Store
+              </a>
+              . To run a local build instead, open <code className="text-foreground">brave://extensions</code> or <code className="text-foreground">chrome://extensions</code>, turn on Developer mode, choose Load unpacked, and pick
               {view.extensionDir === null ? (
                 <> the <code className="text-foreground">browser-extension/dist</code> folder of this plugin (build it with <code className="text-foreground">npm run build:extension</code>).</>
               ) : (

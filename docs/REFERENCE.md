@@ -151,10 +151,15 @@ Nothing changes until you turn it on:
    in each Chromium browser's `NativeMessagingHosts` folder, so the extension
    can talk to bb. **Remove bridge** deletes them. CLI: `bb cua browser on`,
    `bb cua browser install`.
-2. Load the extension: `npm run build:extension`, open `brave://extensions`
-   (or `chrome://extensions`), turn on Developer mode, **Load unpacked**, and
-   pick `browser-extension/dist`. The card shows the full path. A Chrome Web
-   Store listing may follow.
+2. Add the extension from the
+   [Chrome Web Store](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc)
+   (id `aaidacbpcgjigclcoffjlcpnkmpnpgcc`; Brave and Edge install from it too). Or load a
+   local build: `npm run build:extension`, open `brave://extensions` (or
+   `chrome://extensions`), turn on Developer mode, **Load unpacked**, and pick
+   `browser-extension/dist` (id `apeidchlabamkkpmahikoiingkhdcagf`, fixed by
+   the manifest `key`). The card shows the full path. The bridge accepts both
+   ids; a bridge installed before the store release needs **Install bridge**
+   again.
 3. That's it: agents can use any tab. Tabs they open with `browser_open` go
    into a purple **Agent** tab group. **Pause agents** in the extension's
    toolbar popup stops them until you resume.

@@ -49,9 +49,11 @@ Off until you turn it on:
 
 1. In **Settings → Plugins → Computer Use → Browser extension**, tick **Offer
    browser_\* tools** and select **Install bridge**.
-2. Run `npm run build:extension` in this repository. Then open
-   `brave://extensions` or `chrome://extensions`, turn on Developer mode,
-   select **Load unpacked** and choose `browser-extension/dist`.
+2. Add [Browser Bridge for bb](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc) from the Chrome Web
+   Store (it works in Brave and Edge too). To run a local build instead, run
+   `npm run build:extension`, open `brave://extensions` or
+   `chrome://extensions`, turn on Developer mode, select **Load unpacked**
+   and choose `browser-extension/dist`.
 3. Agents can now use your tabs. Tabs they open go into a purple **Agent**
    group. **Pause agents** in the extension's popup stops them.
 

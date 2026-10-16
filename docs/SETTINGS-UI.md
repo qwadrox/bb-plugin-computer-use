@@ -20,7 +20,7 @@ appearing as a nested card inside one large group:
 5. **Browser extension** is the optional Browser Bridge for bb. A checkbox
    (off by default) offers the `browser_*` tools; only when it is on does the
    card show each machine's bridge (Install bridge / Remove bridge, which
-   browsers are set up and connected), the Load unpacked steps with the
+   browsers are set up and connected), the Chrome Web Store link, the Load unpacked steps with the
    extension folder and a Copy button, and the extension id. Like the routing
    mode, the checkbox lives in plugin storage so it appears once.
 6. **About Computer Use** credits Cua AI and links to the official Cua Driver

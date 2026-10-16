@@ -8,9 +8,9 @@ export const NATIVE_HOST_NAME = "dev.qwadrox.agent_browser_bridge";
 
 /**
  * Extension ids the bridge accepts: the unpacked build (fixed by the
- * manifest's "key") and, once published, the Chrome Web Store id.
+ * manifest's "key") and the Chrome Web Store item.
  */
-export const EXTENSION_IDS = ["apeidchlabamkkpmahikoiingkhdcagf"] as const;
+export const EXTENSION_IDS = ["apeidchlabamkkpmahikoiingkhdcagf", "aaidacbpcgjigclcoffjlcpnkmpnpgcc"] as const;
 
 const HELLO_TIMEOUT_MS = 1_500;
 const CALL_TIMEOUT_MS = 90_000;

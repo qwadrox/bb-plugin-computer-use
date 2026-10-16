@@ -66,9 +66,9 @@ The extension makes no network requests of its own and has no analytics.
 npm run package --workspace browser-extension   # browser-bridge-for-bb-<version>.zip, without "key"
 ```
 
-The store assigns its own id. After the first upload, add that id to
-`EXTENSION_IDS` in `src/browser-host.ts` and release the plugin; users then
-re-run **Install bridge** so the native messaging manifests allow it. Bump
+The store item is [`aaidacbpcgjigclcoffjlcpnkmpnpgcc`](https://chromewebstore.google.com/detail/aaidacbpcgjigclcoffjlcpnkmpnpgcc);
+`EXTENSION_IDS` in `src/browser-host.ts` lists it next to the unpacked id, so
+the bridge's native messaging manifests allow both. Bump
 `version` in `static/manifest.json` and `package.json` together.
 
 The store listing text, permission reasons and privacy answers are in
