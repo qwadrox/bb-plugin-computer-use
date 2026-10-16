@@ -107,6 +107,7 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
   it("reports the browser and its settings", async () => {
     const status = await call("status");
     expect(status.paused).toBe(false);
+    expect(status.cursor).toBe(true);
   });
 
   it("opens a tab in the agent group and reads it", async () => {

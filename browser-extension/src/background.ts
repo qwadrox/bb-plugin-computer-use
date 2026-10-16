@@ -2,7 +2,9 @@ import {
   domClick,
   findRef,
   focusRef,
+  hideCursor,
   locateRef,
+  moveCursor,
   pageRoots,
   readValue,
   scrollPage,
@@ -31,6 +33,7 @@ const LOAD_TIMEOUT_MS = 20_000;
 const IDLE_DETACH_MS = 60_000;
 const RECONNECT_ALARM = "reconnect";
 const PAUSED_KEY = "paused";
+const CURSOR_KEY = "cursor";
 
 class BridgeError extends Error {
   constructor(
@@ -44,8 +47,8 @@ class BridgeError extends Error {
 // ---------------------------------------------------------------- settings
 
 async function readSettings(): Promise<StoredSettings> {
-  const stored = await chrome.storage.local.get(PAUSED_KEY);
-  return { paused: stored[PAUSED_KEY] === true };
+  const stored = await chrome.storage.local.get([PAUSED_KEY, CURSOR_KEY]);
+  return { paused: stored[PAUSED_KEY] === true, cursor: stored[CURSOR_KEY] !== false };
 }
 
 function browserName(): string {
@@ -332,6 +335,19 @@ async function settle(tabId: number): Promise<{ url: string; title: string }> {
   return { url: tab?.url ?? "", title: tab?.title ?? "" };
 }
 
+/** Glides the agent cursor to a point before an action, when the user has it on. It never fails the action. */
+async function showCursor(tabId: number, point: { x: number; y: number }, click: boolean): Promise<void> {
+  if (!(await readSettings()).cursor) return;
+  await evaluate(tabId, moveCursor, { ...point, click }).catch(() => undefined);
+}
+
+/** Moves the cursor onto a ref before typing into or choosing in it. */
+async function pointAt(tabId: number, ref: string): Promise<void> {
+  if (!(await readSettings()).cursor) return;
+  const located = await evaluate<Located>(tabId, locateRef, ref).catch(() => null);
+  if (located?.found === true) await showCursor(tabId, located, false);
+}
+
 function staleRef(ref: string): BridgeError {
   return new BridgeError("stale_ref", `Ref ${ref} is not on the page any more. Call browser_read again and use a fresh ref.`);
 }
@@ -446,6 +462,7 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
       const ref = stringParam(params, "ref");
       const located = await evaluate<Located>(tabId, locateRef, ref);
       if (!located.found) throw staleRef(ref);
+      await showCursor(tabId, located, true);
       let route = "trusted";
       try {
         const point = { x: located.x, y: located.y };
@@ -465,6 +482,7 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
       const ref = stringParam(params, "ref");
       const text = typeof params.text === "string" ? params.text : "";
       const replace = params.replace === true;
+      await pointAt(tabId, ref);
       const focused = await evaluate<{ found: boolean; editable: boolean }>(tabId, focusRef, { ref, replace });
       if (!focused.found) throw staleRef(ref);
       if (!focused.editable) throw new BridgeError("not_editable", `Ref ${ref} is not a text field. Click it or pick another ref.`);
@@ -496,6 +514,7 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
     case "select": {
       const tabId = await allowedTab(params.tab_id);
       const ref = stringParam(params, "ref");
+      await pointAt(tabId, ref);
       const result = await evaluate<{ found: boolean; chosen: string | null; options: string[] }>(tabId, selectOption, {
         ref,
         option: stringParam(params, "option"),
@@ -539,6 +558,9 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
     case "screenshot": {
       const tabId = await allowedTab(params.tab_id);
       await attach(tabId);
+      // The picture is for the agent: leave its own cursor out.
+      const cursor = (await readSettings()).cursor;
+      if (cursor) await evaluate(tabId, hideCursor, true).catch(() => undefined);
       try {
         const shot = await cdp<{ data: string }>(
           tabId,
@@ -555,6 +577,8 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
           );
         }
         throw error;
+      } finally {
+        if (cursor) await evaluate(tabId, hideCursor, false).catch(() => undefined);
       }
     }
     case "close": {
@@ -581,6 +605,9 @@ chrome.runtime.onMessage.addListener((message: PopupRequest, _sender, reply) => 
         break;
       case "resume":
         await chrome.storage.local.set({ [PAUSED_KEY]: false });
+        break;
+      case "cursor":
+        await chrome.storage.local.set({ [CURSOR_KEY]: message.enabled });
         break;
       case "reconnect":
         retryMs = 2_000;

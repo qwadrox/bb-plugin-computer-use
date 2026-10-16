@@ -17,7 +17,7 @@ from `npm run package --workspace browser-extension`.
 ```
 Browser Bridge for bb lets the coding agents in bb work in your own browser tabs, in the background, while you keep using the browser.
 
-Agents can read a page as a text outline, click, type, press keys, scroll, choose options, navigate and take screenshots, in any tab, including tabs that are not in front. Tabs that agents open go into a purple "Agent" tab group so you can see them at a glance.
+Agents can read a page as a text outline, click, type, press keys, scroll, choose options, navigate and take screenshots, in any tab, including tabs that are not in front. Tabs that agents open go into a purple "Agent" tab group so you can see them at a glance, and a purple cursor shows where an agent clicks or types (you can turn it off in the popup).
 
 You stay in control:
 • "Pause agents" in the toolbar popup stops them until you resume.
@@ -59,7 +59,7 @@ Lets coding agents running in the bb app on the user's own computer read and ope
   ```
 - `storage`:
   ```
-  Remembers whether the user has paused agents, so the pause survives a browser or service worker restart.
+  Remembers whether the user has paused agents, so the pause survives a browser or service worker restart, and whether to show the agent's cursor.
   ```
 - `alarms`:
   ```

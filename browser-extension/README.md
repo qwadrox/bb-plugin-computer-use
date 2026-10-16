@@ -28,6 +28,12 @@ agent ─▶ bb plugin server ─▶ host worker ─▶ Unix socket ─▶ bridg
   they work in background tabs. While attached, the browser shows its
   debugging bar; closing it pauses agents until you press **Resume** in the
   popup. The debugger detaches after a minute of inactivity.
+- A purple cursor glides to where an agent clicks, types or chooses an
+  option, with a ripple on each click, and fades after five idle seconds. It
+  is drawn in the page, outside `<body>` and in a closed shadow root, so it
+  never takes a click, page outlines skip it, and agent screenshots leave it
+  out. In a background tab it moves without animating. **Show the agent's
+  cursor** in the popup turns it off.
 - Only `http`, `https` and `about:blank` pages are opened or navigated to.
 
 ## Build and load
@@ -54,7 +60,7 @@ to end in a throwaway headless Chromium profile.
 | `debugger` | Trusted clicks, typing and keys, and screenshots, in background tabs |
 | `nativeMessaging` | Talk to the bridge that bb installs on the same machine |
 | `tabs`, `tabGroups` | List and open tabs, and group the tabs agents open |
-| `storage` | Remember whether agents are paused |
+| `storage` | Remember whether agents are paused and whether to show their cursor |
 | `alarms` | Reconnect to the bridge after bb or the browser restarts |
 
 **Privacy.** The extension makes no network requests of its own, has no

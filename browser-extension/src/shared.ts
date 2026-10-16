@@ -6,6 +6,8 @@ export const GROUP_TITLE = "Agent";
 
 export interface StoredSettings {
   paused: boolean;
+  /** Show the agent's purple cursor on pages it clicks or types in. On unless the user turns it off. */
+  cursor: boolean;
 }
 
 export interface BridgeStatus {
@@ -15,7 +17,12 @@ export interface BridgeStatus {
   settings: StoredSettings;
 }
 
-export type PopupRequest = { type: "status" } | { type: "pause" } | { type: "resume" } | { type: "reconnect" };
+export type PopupRequest =
+  | { type: "status" }
+  | { type: "pause" }
+  | { type: "resume" }
+  | { type: "reconnect" }
+  | { type: "cursor"; enabled: boolean };
 
 // The bridge wire protocol. The plugin's browser-tools.ts imports these types, and
 // names and fields must stay compatible with the published extension.

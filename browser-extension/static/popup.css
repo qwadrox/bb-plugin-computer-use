@@ -60,3 +60,13 @@ section {
   padding-top: 8px;
   border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.toggle input {
+  margin: 0;
+  accent-color: #7c3aed;
+}

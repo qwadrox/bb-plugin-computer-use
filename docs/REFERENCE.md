@@ -165,6 +165,12 @@ Nothing changes until you turn it on:
    into a purple **Agent** tab group. **Pause agents** in the extension's
    toolbar popup stops them until you resume.
 
+While an agent clicks, types or chooses an option, a purple cursor glides to
+that spot in the tab and ripples on a click, then fades after five idle
+seconds. It never takes a click, `browser_read` and `browser_screenshot` leave
+it out, and in a tab that is not in front it moves without animating. Untick
+**Show the agent's cursor** in the extension's popup to turn it off.
+
 Tools: `browser_tabs`, `browser_open`, `browser_read` (a text outline with
 `[eN]` refs), `browser_click`, `browser_type`, `browser_select`,
 `browser_key`, `browser_scroll`, `browser_navigate`, `browser_screenshot`,

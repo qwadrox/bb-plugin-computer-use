@@ -37,6 +37,11 @@
   machine's driver connection closes on idle timeout, after a grant change or
   update, or on a disconnect request.
 - **Session labels keep the thread part** when the session prefix is very long.
+- **The browser extension shows where an agent works.** A purple cursor
+  glides to each click, field and option in the tab, ripples on a click and
+  fades when the agent goes idle. It stays out of the agent's page outlines
+  and screenshots. **Show the agent's cursor** in the extension's popup turns
+  it off.
 - **Browser extension fixes.** It acts on elements inside shadow DOM, recovers
   after a pause instead of failing with "not attached", and accepts lowercase
   key names such as `arrowdown`. Its package no longer ships a `.DS_Store`.

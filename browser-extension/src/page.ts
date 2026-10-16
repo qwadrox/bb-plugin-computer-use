@@ -351,3 +351,141 @@ export function scrollPage(args: { ref: string | null; deltaY: number }): { foun
   }
   return { found: true, scrollY: Math.round(scrollY) };
 }
+
+export interface CursorMove {
+  x: number;
+  y: number;
+  click: boolean;
+}
+
+/**
+ * Glides the agent's purple cursor to a viewport point and resolves when it
+ * arrives; `click` adds a ripple there. The cursor sits outside <body>, so
+ * snapshots skip it, in a closed shadow root that ignores the pointer. It
+ * jumps without animating in a hidden tab or with reduced motion, and fades
+ * after a few idle seconds.
+ */
+export function moveCursor(move: CursorMove): Promise<void> {
+  const TAG = "agent-bridge-cursor";
+  const IDLE_MS = 5_000;
+  interface Cursor {
+    host: HTMLElement;
+    pointer: HTMLElement;
+    ripple: HTMLElement;
+    x: number;
+    y: number;
+    timer: number;
+  }
+  const scope = globalThis as typeof globalThis & { agentCursor?: Cursor };
+  let cursor = scope.agentCursor;
+  const fresh = cursor === undefined || !cursor.host.isConnected;
+  if (cursor === undefined || fresh) {
+    // A cursor left by an earlier isolated world (the service worker restarted) has no state here.
+    for (const stale of Array.from(document.querySelectorAll(TAG))) stale.remove();
+    const host = document.createElement(TAG);
+    host.setAttribute("aria-hidden", "true");
+    host.setAttribute("popover", "manual");
+    host.style.cssText = [
+      "all: initial", "position: fixed", "inset: 0 auto auto 0", "width: 0", "height: 0", "margin: 0", "padding: 0",
+      "border: 0", "background: transparent", "overflow: visible", "pointer-events: none", "z-index: 2147483647",
+    ].map((rule) => `${rule} !important`).join(";");
+    const shadow = host.attachShadow({ mode: "closed" });
+    const pointer = document.createElement("div");
+    // The tip of the drawing (5, 3.5 in its 24-unit box, drawn at 28 px) sits on the point.
+    pointer.style.cssText =
+      "position: fixed; left: -6px; top: -4px; width: 28px; height: 28px; opacity: 0; transition: opacity 250ms ease;" +
+      "filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.3)) drop-shadow(0 0 6px rgb(139 92 246 / 0.45)); will-change: transform";
+    // Built node by node: pages with Trusted Types refuse innerHTML.
+    const SVG = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "28");
+    svg.setAttribute("height", "28");
+    const gradient = document.createElementNS(SVG, "linearGradient");
+    gradient.id = "fill";
+    for (const [name, value] of [["x1", "5"], ["y1", "4"], ["x2", "14"], ["y2", "19"], ["gradientUnits", "userSpaceOnUse"]]) {
+      gradient.setAttribute(name, value);
+    }
+    for (const [offset, color] of [["0", "#a78bfa"], ["1", "#6d28d9"]]) {
+      const stop = document.createElementNS(SVG, "stop");
+      stop.setAttribute("offset", offset);
+      stop.setAttribute("stop-color", color);
+      gradient.append(stop);
+    }
+    const defs = document.createElementNS(SVG, "defs");
+    defs.append(gradient);
+    // A white outline under a gradient arrowhead; round joins at both widths round the corners.
+    const shape = "M5 3.5 L19.5 13.2 L12.6 14.2 L9.4 20.8 Z";
+    for (const [paint, width] of [["white", "4.5"], ["url(#fill)", "2"]]) {
+      const path = document.createElementNS(SVG, "path");
+      path.setAttribute("d", shape);
+      path.setAttribute("fill", paint);
+      path.setAttribute("stroke", paint);
+      path.setAttribute("stroke-width", width);
+      path.setAttribute("stroke-linejoin", "round");
+      svg.append(path);
+    }
+    svg.prepend(defs);
+    pointer.append(svg);
+    const ripple = document.createElement("div");
+    ripple.style.cssText =
+      "position: fixed; left: -20px; top: -20px; width: 40px; height: 40px; border-radius: 50%; opacity: 0;" +
+      "background: radial-gradient(circle, rgb(139 92 246 / 0.45), rgb(139 92 246 / 0) 70%);" +
+      "box-shadow: inset 0 0 0 1.5px rgb(139 92 246 / 0.6)";
+    shadow.append(ripple, pointer);
+    document.documentElement.append(host);
+    cursor = { host, pointer, ripple, x: move.x, y: move.y, timer: 0 };
+    scope.agentCursor = cursor;
+  }
+  const { host, pointer, ripple } = cursor;
+  try {
+    // Re-enter the top layer so the cursor stays above dialogs the page opened since.
+    if (host.matches(":popover-open")) host.hidePopover();
+    host.showPopover();
+  } catch {
+    // Without popover support the z-index has to do.
+  }
+  clearTimeout(cursor.timer);
+  const animate = document.visibilityState === "visible" && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const from = `translate(${cursor.x}px, ${cursor.y}px)`;
+  const to = `translate(${move.x}px, ${move.y}px)`;
+  const distance = Math.hypot(move.x - cursor.x, move.y - cursor.y);
+  cursor.x = move.x;
+  cursor.y = move.y;
+  pointer.style.transform = to;
+  if (fresh) void pointer.offsetWidth;
+  pointer.style.opacity = "1";
+  const glide =
+    animate && !fresh && distance > 1
+      ? pointer.animate([{ transform: from }, { transform: to }], {
+          duration: Math.min(450, 180 + distance * 0.4),
+          easing: "cubic-bezier(0.2, 0.7, 0.2, 1)",
+        }).finished
+      : Promise.resolve();
+  const current = cursor;
+  return glide.then(
+    () => {
+      if (move.click && animate) {
+        pointer.animate([{ transform: to }, { transform: `${to} scale(0.85)` }, { transform: to }], { duration: 180, easing: "ease-out" });
+        ripple.animate(
+          [
+            { transform: `${to} scale(0.3)`, opacity: 0.9 },
+            { transform: `${to} scale(1.2)`, opacity: 0 },
+          ],
+          { duration: 500, easing: "ease-out" },
+        );
+      }
+      current.timer = setTimeout(() => {
+        pointer.style.opacity = "0";
+      }, IDLE_MS);
+    },
+    () => undefined,
+  );
+}
+
+/** Hides or shows the agent cursor, so a screenshot does not include it. */
+export function hideCursor(hidden: boolean): void {
+  for (const host of Array.from(document.querySelectorAll("agent-bridge-cursor"))) {
+    (host as HTMLElement).style.setProperty("visibility", hidden ? "hidden" : "visible", "important");
+  }
+}
