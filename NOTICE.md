@@ -11,7 +11,7 @@ Cua AI, Inc.
   <https://github.com/trycua/cua> (see `LICENSE.md` in that repository).
 - "Cua" is a name of Cua AI, Inc.; it is used here only to identify the
   upstream runtime this plugin integrates. The plugin icon
-  (`icons/desktop-browser-agent.svg`) is original work of this project and uses
+  (`icons/desktop-browser-agent.svg`, a single-colour glyph) is original work of this project and uses
   no Cua or bb artwork. Earlier versions used a logo derived from Cua's.
 - The agent skill in `skills/cua-computer-use/SKILL.md` is adapted from the
   upstream Cua Driver skill pack (`libs/cua-driver/rust/Skills/cua-driver/`,
