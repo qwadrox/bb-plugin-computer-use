@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Optional browser extension for the Computer Use bb plugin: lets bb agents work in tabs you share, through chrome.debugger.",
+  "description": "Optional browser extension for the Computer Use bb plugin: lets bb agents work in your browser tabs, through chrome.debugger.",
   "license": "MIT",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
