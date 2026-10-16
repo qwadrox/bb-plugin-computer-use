@@ -60,7 +60,7 @@ async function livePlugin(settings: Record<string, string | boolean> = {}) {
   };
   const handlers = hostEntry.handlers as unknown as Record<string, (input: unknown, context: unknown) => unknown>;
   const { bb, harness } = createFakePluginHost({
-    pluginId: "cua-driver",
+    pluginId: "computer-use",
     settings,
     agentSkillIds: ["cua-computer-use"],
     sdk: {

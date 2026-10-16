@@ -1,5 +1,5 @@
 {
-  "name": "bb-plugin-cua-driver",
+  "name": "bb-plugin-computer-use",
   "version": "0.2.0",
   "type": "module",
   "engines": {
@@ -49,9 +49,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juanbermudez/bb-plugin-cua-driver.git"
+    "url": "git+https://github.com/qwadrox/bb-plugin-computer-use.git"
   },
-  "homepage": "https://github.com/juanbermudez/bb-plugin-cua-driver#readme",
+  "homepage": "https://github.com/qwadrox/bb-plugin-computer-use#readme",
   "keywords": [
     "bb-plugin",
     "computer-use",

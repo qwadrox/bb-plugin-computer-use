@@ -306,7 +306,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         }
       });
       try {
-        await next.initialize("bb-plugin-cua-driver", PLUGIN_VERSION);
+        await next.initialize("bb-plugin-computer-use", PLUGIN_VERSION);
         tools = await next.listTools();
       } catch (error) {
         const stderr = next.recentStderr;

@@ -52,9 +52,9 @@ Inc. or the bb team. See [NOTICE.md](NOTICE.md) for attribution.
 ## Install
 
 ```sh
-bb plugin install https://github.com/juanbermudez/bb-plugin-cua-driver
+bb plugin install https://github.com/qwadrox/bb-plugin-computer-use
 # or pin a release range
-bb plugin install git:https://github.com/juanbermudez/bb-plugin-cua-driver.git@^0.1.0
+bb plugin install git:https://github.com/qwadrox/bb-plugin-computer-use.git@^0.3.0
 ```
 
 From a checkout:

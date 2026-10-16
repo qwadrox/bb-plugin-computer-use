@@ -57,7 +57,7 @@ async function load(options: {
 } = {}) {
   const hostCalls: Array<{ method: string; input: unknown; hostId: string }> = [];
   const { bb, harness } = createFakePluginHost({
-    pluginId: "cua-driver",
+    pluginId: "computer-use",
     settings: options.settings ?? {},
     agentSkillIds: ["cua-computer-use"],
     sdk: {
@@ -193,7 +193,7 @@ describe("cua-driver server", () => {
 
     const blocked = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(blocked.isError).toBe(true);
-    expect(blocked.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/cua-driver)");
+    expect(blocked.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
     expect(blocked.content[0]?.text).toMatch(/Install Cua Driver/);
     expect(hostCalls.some((call) => call.method === "callTool")).toBe(false);
 
@@ -209,7 +209,7 @@ describe("cua-driver server", () => {
     const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/Screen Recording/);
-    expect(result.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/cua-driver)");
+    expect(result.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
     expect(result.content[0]?.text).toMatch(/Grant macOS permissions/);
     expect(hostCalls.some((call) => call.method === "callTool")).toBe(false);
   });
@@ -225,7 +225,7 @@ describe("cua-driver server", () => {
 
     const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/cua-driver)");
+    expect(result.content[0]?.text).toContain("[Open Computer Use settings](/settings/plugins/computer-use)");
     expect(result.content[0]?.text).toMatch(/Driver detail:.*permissions_pending/);
     expect(hostCalls.some((call) => call.method === "callTool")).toBe(true);
     expect(hostCalls.filter((call) => call.method === "status")).toHaveLength(2);

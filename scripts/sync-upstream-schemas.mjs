@@ -66,7 +66,7 @@ function listTools() {
       await send("initialize", {
         protocolVersion: "2025-06-18",
         capabilities: {},
-        clientInfo: { name: "bb-plugin-cua-driver-sync", version: "0" },
+        clientInfo: { name: "bb-plugin-computer-use-sync", version: "0" },
       });
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
       const tools = [];

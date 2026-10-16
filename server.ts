@@ -41,7 +41,7 @@ const SKILL_NAME = "cua-computer-use";
 const REALTIME_CHANNEL = "state-changed";
 const SESSION_LABEL_MAX = 125;
 const STATUS_FRESH_MS = 30_000;
-const SETTINGS_PATH = "/settings/plugins/cua-driver";
+const SETTINGS_PATH = "/settings/plugins/computer-use";
 
 export const INSTALL_INSTRUCTIONS = [
   "Install Cua Driver on the machine that runs this thread:",
