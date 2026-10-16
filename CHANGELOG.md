@@ -14,6 +14,16 @@
   own card. The mode now lives in plugin storage; set it in the Routing mode
   card or with `bb cua mode`. A mode saved by 0.3.0 carries over.
   `bb plugin config computer-use set mode …` no longer applies.
+- **Browser refusals are no longer reported as missing permissions.** A
+  refusal that mentioned the accessibility tree was turned into "blocked by a
+  system permission" and cut short, hiding the driver's next step. Only
+  macOS privacy failures (`permissions_pending`, `tcc_*`, "not granted") get
+  the permission guidance now.
+- **Work alongside the user in the browser.** The skill now attaches to a
+  signed-in browser once with `delivery_mode: "foreground"` when a background
+  attach is refused, then works in its own tab by `tab_id` while the user
+  keeps using other tabs, instead of falling back to window tools that only
+  see the tab that is showing.
 
 ## 0.3.0
 

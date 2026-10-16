@@ -105,8 +105,13 @@ person's signed-in profile: reading it needs the driver service started with
 settings to allow it. The plugin then restarts the service on macOS with that
 grant (through LaunchServices, so it keeps CuaDriver.app's permissions) and
 agents attach with `cua_browser_prepare({pid, window_id, strategy: {kind:
-"existing_profile"}})`. With the setting off, the plugin refuses that attach
-itself. Turning the setting off blocks those attaches at once, but the running
+"existing_profile"}})`. Once attached, browser tools work in their own tab
+while you use other tabs in the same window. Window tools such as
+`cua_get_window_state` see only the tab that is showing. When the browser
+shares your screen, the first attach brings it to the front once to approve
+the connection, then your app comes back; the connection is reused for up to
+30 minutes idle and 8 hours in total. With the setting off, the plugin refuses
+that attach itself. Turning the setting off blocks those attaches at once, but the running
 service keeps the grant until it restarts: run `cua-driver stop` to drop it
 now. The plugin never removes a grant itself, since someone else may have
 started the service that way. On Linux and Windows, start

@@ -305,9 +305,22 @@ export function isEndedSessionFailure(result: ToolCallResult): boolean {
   return result.isError && /session '[^']*' has ended/i.test(toolResultText(result));
 }
 
-function isPermissionFailure(result: ToolCallResult): boolean {
+/** The driver's refusal code, from its structured content or its `refused (<code>)` text. */
+function refusalCode(result: ToolCallResult): string | null {
+  const refusal = (result.structured as { refusal?: { code?: unknown } } | null | undefined)?.refusal;
+  if (typeof refusal?.code === "string") return refusal.code;
+  return /refused \(([a-z_]+)\)/.exec(toolResultText(result))?.[1] ?? null;
+}
+
+/**
+ * A macOS privacy grant is missing. Other refusals carry their own next step
+ * and often mention the accessibility tree, so they are passed through as-is.
+ */
+export function isPermissionFailure(result: ToolCallResult): boolean {
   if (!result.isError) return false;
-  return /permissions?_pending|permissions? (?:required|denied)|accessibility|screen[_ -]?recording|direct[_ -]?capture/i.test(
+  const code = refusalCode(result);
+  if (code !== null) return /permission|^tcc_/.test(code);
+  return /permissions?_pending|tcc_(?:accessibility|screen_recording)|(?:accessibility|screen recording)(?: permission)? (?:is )?not granted|AX is not trusted|direct[_ -]?capture/i.test(
     toolResultText(result),
   );
 }
@@ -330,7 +343,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Signed-in browser profiles",
       description:
-        "Let browser tools attach to an existing, signed-in Chrome, Edge, or Brave window. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
+        "Let browser tools attach to an existing, signed-in Chrome, Edge, or Brave window and work in a tab while you use other tabs. The first attach brings the browser to the front once. On macOS this restarts Cua Driver with --grant existing-profile. Turning it off blocks those attaches at once; the running service keeps the grant until it restarts (cua-driver stop).",
       default: false,
     },
     confirmSensitiveTools: {

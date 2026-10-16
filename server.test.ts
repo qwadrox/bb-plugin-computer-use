@@ -1,7 +1,7 @@
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import type { PluginAgentToolResult } from "@get-bb/plugin-sdk";
 import { describe, expect, it, vi } from "vitest";
-import plugin from "./server.js";
+import plugin, { isPermissionFailure } from "./server.js";
 import type { CatalogTool, DriverStatus, ToolCallResult } from "./src/contract.js";
 import { TESTED_DRIVER_VERSION } from "./src/snapshot.js";
 import testedDriver from "./src/driver-snapshot.json";
@@ -583,6 +583,34 @@ describe("setup guidance", () => {
     expect(toolCalls()).toHaveLength(1);
     const lastCall = hostCalls.map((call) => call.method).lastIndexOf("callTool");
     expect(hostCalls.slice(lastCall).some((call) => call.method === "status")).toBe(true);
+  });
+
+  it("passes other refusals through even when they mention the accessibility tree", async () => {
+    const refusal = {
+      content: [
+        {
+          type: "text" as const,
+          text: "browser_prepare refused: attaching now would bring the browser in front of the app the user is working in. Use get_window_state on the browser window and act through its accessibility tree, or retry with delivery_mode \"foreground\".",
+        },
+      ],
+      isError: true,
+      structured: { refusal: { code: "background_unavailable" } },
+    };
+    const { harness } = await load({ settings: { signedInBrowserProfiles: true }, toolResult: refusal });
+    const result = structured(
+      await harness.behavior.callAgentTool("cua_browser_prepare", { pid: 4, window_id: 9, strategy: { kind: "existing_profile" } }),
+    );
+    expect(text(result)).not.toMatch(/Grant macOS permissions/);
+    expect(text(result)).toContain('retry with delivery_mode "foreground"');
+  });
+
+  it("tells permission failures from other refusals", () => {
+    const failed = (text: string, structured?: unknown) => ({ content: [{ type: "text" as const, text }], isError: true, structured });
+    expect(isPermissionFailure(failed("Accessibility permission not granted"))).toBe(true);
+    expect(isPermissionFailure(failed("refused (tcc_screen_recording): grant Screen Recording"))).toBe(true);
+    expect(isPermissionFailure(failed("x", { refusal: { code: "tcc_accessibility" } }))).toBe(true);
+    expect(isPermissionFailure(failed("refused (background_unavailable): act through its accessibility tree"))).toBe(false);
+    expect(isPermissionFailure(failed("Permission denied (os error 13)"))).toBe(false);
   });
 });
 

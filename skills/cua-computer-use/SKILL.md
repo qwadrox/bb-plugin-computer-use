@@ -86,9 +86,17 @@ returned refs. If binding is refused, `detail.next_call` names the
 - A browser people use daily is a signed-in profile. Attaching needs the
   **Signed-in browser profiles** setting; if the tool says it is off, ask the
   user instead of working around it.
-- If browser tools refuse in the background, the page is still reachable:
-  read it with `cua_get_window_state` and act with `cua_set_value` or
-  `cua_click`. If the first read shows only browser chrome, read once more.
+- Browser tools act on one tab by `tab_id`, whichever tab the user is
+  looking at, so the user can keep working in other tabs. Window tools see
+  only the tab showing in that window; prefer browser tools for web pages.
+- If `cua_browser_prepare` refuses with `background_unavailable`, call it once
+  more with `delivery_mode: "foreground"` and tell the user in one line: the
+  browser comes to the front once to approve the connection, then their app
+  comes back. Later sessions reuse that connection (up to 30 minutes idle,
+  8 hours in total).
+- If browser tools still refuse, the page is still reachable: read it with
+  `cua_get_window_state` and act with `cua_set_value` or `cua_click`. If the
+  first read shows only browser chrome, read once more.
 - `cua_browser_download` saves into an existing folder the user approved;
   confirm the folder first.
 
@@ -104,4 +112,5 @@ returned refs. If binding is refused, `detail.next_call` names the
 - Honor the interaction method the user asked for: "through the UI" rules out
   app APIs, shell changes and DOM scripting.
 - Do not reach for foreground delivery or desktop scope to make something
-  work; both take over the user's screen.
+  work; both take over the user's screen. The one-time browser attach above
+  is the exception.
