@@ -5,9 +5,8 @@ is the source of truth for the entry format and checks.
 
 This plugin is listed on its own as **Desktop & Browser Agent**, id
 `computer-use` (`entries/computer-use.json`), category `agents-and-providers`.
-The plugin it was forked from, Juan Bermudez's **Computer Use**, keeps its own
-entry (`cua-driver`); the name, icon and PR body keep the two apart and credit
-the fork.
+The name and icon keep it apart from the older **Computer Use** entry
+(`cua-driver`).
 
 ## Files in the marketplace repo
 

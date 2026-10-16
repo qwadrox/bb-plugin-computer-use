@@ -5,8 +5,8 @@
 ## 0.4.0 - 2026-10-16
 
 - **New name and icon: Desktop & Browser Agent.** The plugin is listed in
-  the bb store separately from the Computer Use plugin it was forked from, so
-  it needs its own name. The id stays `computer-use`, so installs, settings
+  the bb store apart from the older Computer Use plugin, so it needs its
+  own name. The id stays `computer-use`, so installs, settings
   and the `/settings/plugins/computer-use` link keep working. The new icon is
   original artwork and replaces the one derived from Cua's logo.
 
@@ -51,7 +51,7 @@
 
 ## 0.3.0
 
-Forked from bb-plugin-cua-driver as **Computer Use** (plugin id
+Released as **Computer Use** (plugin id
 `computer-use`). Tested against Cua Driver 0.36.0 on macOS, with live reads of
 Outlook, Teams and a Brave window.
 
@@ -86,7 +86,7 @@ Outlook, Teams and a Brave window.
 
 ## 0.2.0
 
-Validated live against Cua Driver 0.28.2 on macOS (see `docs/TASKS.md`, M2).
+Validated live against Cua Driver 0.28.2 on macOS.
 
 - Tool schemas now come from Cua Driver itself (`npm run sync:schemas`), and
   arguments are forwarded untouched. The hand-written 0.1.0 schemas had

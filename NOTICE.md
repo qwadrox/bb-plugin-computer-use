@@ -1,12 +1,5 @@
 # Third-party notices
 
-## Origin
-
-This plugin started as a fork of
-[bb-plugin-cua-driver](https://github.com/juanbermudez/bb-plugin-cua-driver)
-("Computer Use") by Juan Bermudez, MIT licensed; `LICENSE` keeps that
-copyright notice. It is listed separately as **Desktop & Browser Agent**.
-
 ## Cua Driver (Cua AI, Inc.)
 
 This plugin is an independent integration for [bb](https://getbb.app) that

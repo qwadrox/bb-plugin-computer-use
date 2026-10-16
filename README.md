@@ -5,10 +5,7 @@ machine, in the background, powered by [Cua Driver](https://cua.ai/docs) from
 Cua AI.
 
 A community plugin, not affiliated with or endorsed by Cua AI, Inc. or the bb
-team. It started as a fork of Juan Bermudez's
-[Computer Use](https://github.com/juanbermudez/bb-plugin-cua-driver) plugin and
-adds an optional browser extension, approvals for sensitive actions, and more.
-See [NOTICE.md](NOTICE.md).
+team. See [NOTICE.md](NOTICE.md).
 
 ## Features
 

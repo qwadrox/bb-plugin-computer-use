@@ -1,14 +1,13 @@
-# Plan: Desktop & Browser Agent (fork of bb-plugin-cua-driver)
+# Plan: Desktop & Browser Agent rebuild
 
-Forked from [juanbermudez/bb-plugin-cua-driver](https://github.com/juanbermudez/bb-plugin-cua-driver)
-at `068c7ef` (unreleased 0.2.0, built against Cua Driver 0.28.2). Plugin id
-`computer-use`, package `bb-plugin-computer-use`.
+Starting point: `068c7ef` (unreleased 0.2.0, built against Cua Driver 0.28.2).
+Plugin id `computer-use`, package `bb-plugin-computer-use`.
 
-## Why fork
+## Why the rebuild
 
 - Cua Driver ships a release every 1–3 days (12 stable releases between
-  2026-09-30 and 2026-10-16). Upstream's last commit is 2026-09-23 and 0.2.0
-  was never tagged, so the marketplace still serves 0.1.0.
+  2026-09-30 and 2026-10-16). The last commit before the rebuild was 2026-09-23,
+  and 0.2.0 was never tagged, so the marketplace still serves 0.1.0.
 - 0.2.0 still treats a hand-maintained catalog plus a bundled schema snapshot
   as the source of truth. On driver 0.36.0 that catalog exposes 32 of 60 tools
   and misses `run_steps`, which the driver now calls "the default way to act".

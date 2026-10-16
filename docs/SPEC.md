@@ -1,6 +1,6 @@
 # Specification: Desktop & Browser Agent for bb
 
-Status: the v0.1 specification, inherited from bb-plugin-cua-driver. Tool
+Status: the v0.1 specification. Tool
 selection, exposure, drift and installs changed in 0.3.0: see
 [PLAN.md](PLAN.md) and the README. Sections marked *later* are planned, not
 shipped.
