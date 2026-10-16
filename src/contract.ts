@@ -1,11 +1,6 @@
 import { defineRpcContract, type ExperimentalHostSignals } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
-/**
- * Extension ids the browser bridge accepts, the unpacked build first: the unpacked build (fixed by the
- * manifest's "key") and the Chrome Web Store item.
- */
-export const EXTENSION_IDS = ["apeidchlabamkkpmahikoiingkhdcagf", "aaidacbpcgjigclcoffjlcpnkmpnpgcc"] as const;
 
 export const toolContentPartSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string() }).strict(),

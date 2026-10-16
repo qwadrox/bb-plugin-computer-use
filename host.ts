@@ -21,6 +21,7 @@ import {
 import { bridgeLayout, bridgeState, callBrowser, installBridge, uninstallBridge } from "./src/browser-host.js";
 import { INSTALLER_LAYOUT, TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import { McpStdioClient, type McpChild, type McpContentPart } from "./src/mcp-client.js";
+import { CUA_INSTALL_DOCS_URL, INSTALL_SCRIPT_URLS } from "./src/links.js";
 import packageJson from "./package.json";
 
 export const PLUGIN_VERSION = packageJson.version;
@@ -32,11 +33,6 @@ const DEFAULT_IDLE_DISCONNECT_MS = 10 * 60_000;
 const STRUCTURED_TEXT_LIMIT = 200_000;
 const INSTALL_TAIL_LINES = 80;
 
-/** The newest release, through the official one-line installer; pinned installs come from the release itself. */
-const INSTALL_SCRIPT_URLS = {
-  posix: "https://cua.ai/driver/install.sh",
-  windows: "https://cua.ai/driver/install.ps1",
-} as const;
 
 export interface ExecResult {
   code: number | null;
@@ -313,7 +309,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
       const binary = await resolveBinary();
       if (binary === null) {
         throw new Error(
-          "cua-driver is not installed on this machine. Install it from https://cua.ai/docs/how-to-guides/driver/install and run `cua-driver doctor`.",
+          `cua-driver is not installed on this machine. Install it from ${CUA_INSTALL_DOCS_URL} and run \`cua-driver doctor\`.`,
         );
       }
       await ensureDaemonGrants(binary, grants);

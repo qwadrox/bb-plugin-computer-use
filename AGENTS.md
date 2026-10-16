@@ -30,6 +30,7 @@ components/ui/, lib/utils.ts   shadcn-style UI primitives used by app.tsx
 src/exposure.ts          reviewed exposure per driver tool; the sensitive-action list
 src/catalog.ts           agent tool names, meta tools, schema overrides
 src/policy.ts            routing decision
+src/links.ts             URLs, extension ids and install commands shared by server, host and app
 src/contract.ts          server ⇄ host RPC contract (host methods, incl. browserBridge and browserCall)
 src/driver-tools.ts      normalize a driver's tools/list
 src/drift.ts             compare a machine's tools with the tested snapshot
@@ -60,7 +61,7 @@ docs/MARKETPLACE.md      the bb marketplace entry and the release steps
 - **Safety switches default to the permissive choice and stay switchable**
   (the user prefers automation); new risky tools still start off.
 - **The extension's ids are pinned.** The native host name must match
-  `browser-extension/src/shared.ts`. `EXTENSION_IDS` in `src/contract.ts`
+  `browser-extension/src/shared.ts`. `EXTENSION_IDS` in `src/links.ts`
   lists both the unpacked id (fixed by the manifest `key`) and the Chrome Web
   Store id; keep them in step with the manifest `key` and the store listing.
   Installed paths stay `agent-browser-bridge`.

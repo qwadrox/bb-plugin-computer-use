@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { EXTENSION_IDS } from "./contract.js";
+import { EXTENSION_IDS } from "./links.js";
 import {
   NATIVE_HOST_NAME,
   bridgeLayout,

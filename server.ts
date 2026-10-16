@@ -10,7 +10,6 @@ import {
 } from "./src/catalog.js";
 import { BROWSER_TOOLS, BROWSER_TOOL_NAMES, browserToolResult, type BrowserTool } from "./src/browser-tools.js";
 import {
-  EXTENSION_IDS,
   IDLE_INSTALL_STATE,
   browserBridgeStateSchema,
   catalogToolSchema,
@@ -55,6 +54,7 @@ import {
   type RoutingMode,
   type RoutingPolicy,
 } from "./src/policy.js";
+import { CUA_INSTALL_DOCS_URL, EXTENSION_STORE_URL, UNPACKED_EXTENSION_ID, manualInstallCommands } from "./src/links.js";
 import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./src/snapshot.js";
 
 const MODE_KEY = "routing-mode";
@@ -81,10 +81,10 @@ const APPROVAL_ARGUMENTS_MAX = 2_000;
 const INSTALL_INSTRUCTIONS = [
   `Install Cua Driver ${TESTED_DRIVER_VERSION} (the version this plugin was tested with) on the machine that runs this thread:`,
   `  From bb: open ${SETTINGS_PATH}, expand the machine, and select Install Cua Driver; or run \`bb cua install --yes\`.`,
-  `  macOS/Linux: CUA_DRIVER_RS_VERSION=${TESTED_DRIVER_VERSION} /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"`,
-  `  Windows:     $env:CUA_DRIVER_RS_VERSION="${TESTED_DRIVER_VERSION}"; irm https://cua.ai/driver/install.ps1 | iex`,
+  `  macOS/Linux: ${manualInstallCommands(TESTED_DRIVER_VERSION).posix}`,
+  `  Windows:     ${manualInstallCommands(TESTED_DRIVER_VERSION).windows}`,
   "Then run `cua-driver doctor`. On macOS also run `cua-driver permissions grant` and approve Accessibility and Screen Recording.",
-  "Docs: https://cua.ai/docs/how-to-guides/driver/install",
+  `Docs: ${CUA_INSTALL_DOCS_URL}`,
 ].join("\n");
 
 const providerViewSchema = z
@@ -152,9 +152,6 @@ const stateSchema = z
 
 const hostInput = z.object({ hostId: z.string().min(1) }).strict();
 
-/** EXTENSION_IDS lists the unpacked build's id first (its manifest "key"), then the Web Store item. */
-const BROWSER_EXTENSION_ID = EXTENSION_IDS[0];
-const BROWSER_EXTENSION_STORE_URL = `https://chromewebstore.google.com/detail/${EXTENSION_IDS[1]}`;
 
 const browserViewSchema = z
   .object({
@@ -202,10 +199,11 @@ export const rpcContract = defineRpcContract({
   },
 });
 
-type State = z.infer<typeof stateSchema>;
+/** What the settings app reads: getState and browserState. */
+export type State = z.infer<typeof stateSchema>;
 type ToolView = z.infer<typeof toolViewSchema>;
 type DriftView = z.infer<typeof driftViewSchema>;
-type BrowserView = z.infer<typeof browserViewSchema>;
+export type BrowserView = z.infer<typeof browserViewSchema>;
 
 interface SettingsSnapshot {
   browserTools: boolean;
@@ -1175,7 +1173,7 @@ export default async function plugin(bb: BbPluginApi) {
     const [hosts, dir] = await Promise.all([bb.sdk.hosts.list(), extensionDir()]);
     return {
       enabled: browserExtension,
-      extensionId: BROWSER_EXTENSION_ID,
+      extensionId: UNPACKED_EXTENSION_ID,
       extensionDir: dir,
       hosts: await Promise.all(
         hosts
@@ -1493,7 +1491,7 @@ export default async function plugin(bb: BbPluginApi) {
           if (json) {
             return {
               exitCode: 0,
-              stdout: JSON.stringify({ enabled: browserExtension, extensionId: BROWSER_EXTENSION_ID, extensionDir: dir, bridge }),
+              stdout: JSON.stringify({ enabled: browserExtension, extensionId: UNPACKED_EXTENSION_ID, extensionDir: dir, bridge }),
             };
           }
           const lines = [
@@ -1503,7 +1501,7 @@ export default async function plugin(bb: BbPluginApi) {
               .filter((entry) => entry.detected)
               .map((entry) => `  ${entry.name}: ${entry.registered ? "registered" : "not registered"}`),
             `Connected: ${bridge.connections.length === 0 ? "none" : bridge.connections.map((entry) => `${entry.browser} ${entry.version} (extension ${entry.extension})`).join(", ")}`,
-            `Chrome Web Store: ${BROWSER_EXTENSION_STORE_URL}\nExtension id: ${BROWSER_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
+            `Chrome Web Store: ${EXTENSION_STORE_URL}\nExtension id: ${UNPACKED_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
           ];
           return { exitCode: 0, stdout: lines.join("\n") };
         }

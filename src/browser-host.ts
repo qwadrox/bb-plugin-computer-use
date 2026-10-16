@@ -2,7 +2,8 @@ import { connect } from "node:net";
 import { access, chmod, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BRIDGE_SCRIPT } from "./browser-bridge-script.js";
-import { EXTENSION_IDS, type BrowserBridgeState, type BrowserCallResult } from "./contract.js";
+import type { BrowserBridgeState, BrowserCallResult } from "./contract.js";
+import { EXTENSION_IDS } from "./links.js";
 
 /** Must match NATIVE_HOST in browser-extension/src/shared.ts. */
 export const NATIVE_HOST_NAME = "dev.qwadrox.agent_browser_bridge";
