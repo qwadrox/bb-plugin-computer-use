@@ -10,7 +10,23 @@ import {
   parseUpdateCheck,
   type ExecResult,
 } from "./host.js";
+import { INSTALLER_LAYOUT, installerFiles, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import type { McpChild } from "./src/mcp-client.js";
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function fakeScript(url: string): Uint8Array {
+  return encoder.encode(`#!/bin/bash\necho installing from ${url}\n`);
+}
+
+/** Checksums that match what the fake download serves for `version`. */
+function recordFor(version: string): InstallerRecord {
+  const names = [...INSTALLER_LAYOUT.posix.assets, ...INSTALLER_LAYOUT.posix.tagged];
+  const placeholder = { driverVersion: version, sha256: Object.fromEntries(names.map((name) => [name, ""])) };
+  const files = installerFiles("posix", version, placeholder) ?? [];
+  return { driverVersion: version, sha256: Object.fromEntries(files.map((file) => [file.name, sha256Hex(fakeScript(file.url))])) };
+}
 
 function fakeMcpServer(
   tools: Array<{ name: string; inputSchema: Record<string, unknown>; annotations?: Record<string, unknown> }>,
@@ -87,6 +103,7 @@ function deps(overrides: Partial<Parameters<typeof createCuaHostEntry>[0]> & { i
   });
   const spawnMcp = vi.fn(() => server.child);
   const written: Array<{ path: string; content: string }> = [];
+  const fetched: string[] = [];
   const processes: Array<{
     command: string;
     args: readonly string[];
@@ -104,9 +121,14 @@ function deps(overrides: Partial<Parameters<typeof createCuaHostEntry>[0]> & { i
       fileExists: async (path) => installedRef.current && path === "/Users/test/.local/bin/cua-driver",
       exec,
       spawnMcp,
-      fetchText: async (url) => `#!/bin/bash\necho installing from ${url}\n`,
+      installer: recordFor("0.36.0"),
+      fetchBytes: async (url) => {
+        fetched.push(url);
+        return fakeScript(url);
+      },
+      makeDir: async () => undefined,
       writeFile: async (path, content) => {
-        written.push({ path, content });
+        written.push({ path, content: decoder.decode(content) });
       },
       spawnProcess: (command, args, env) => {
         const child = fakeProcess();
@@ -119,6 +141,7 @@ function deps(overrides: Partial<Parameters<typeof createCuaHostEntry>[0]> & { i
     spawnMcp,
     server,
     written,
+    fetched,
     processes,
     installedRef,
     daemonCommand,
@@ -349,17 +372,26 @@ describe("cua host entry", () => {
     await harness.experimental_dispose();
   });
 
-  it("stops the running driver before an update replaces it, and pins the requested version", async () => {
-    const { entry, processes, written } = deps({ installed: true });
+  it("stops the running driver, then runs the release's own installer only after checking every file", async () => {
+    const { entry, processes, written, fetched } = deps({ installed: true });
     const harness = experimental_createHostEntryHarness(entry);
     expect(await harness.experimental_call("install", { version: "0.36.0" })).toMatchObject({ target: "0.36.0" });
     await flush();
     expect(processes[0]).toMatchObject({ command: "/Users/test/.local/bin/cua-driver", args: ["stop"] });
     processes[0]!.child.exit(0);
     await flush();
+    expect(fetched).toEqual([
+      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.36.0/install.sh",
+      "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.36.0/_install-rust.sh",
+      "https://raw.githubusercontent.com/trycua/cua/cua-driver-rs-v0.36.0/libs/cua-driver/scripts/_install-common.sh",
+    ]);
+    // Siblings in one directory, so install.sh loads them from disk instead of cua.ai.
+    const dir = written[0]!.path.replace(/\/install\.sh$/, "");
+    expect(dir).toMatch(/cua-driver-rs-v0\.36\.0$/);
+    expect(written.map((file) => file.path)).toEqual([`${dir}/install.sh`, `${dir}/_install-rust.sh`, `${dir}/_install-common.sh`]);
     expect(processes[1]).toMatchObject({
       command: "/bin/bash",
-      args: [written[0]!.path],
+      args: [`${dir}/install.sh`],
       env: { CUA_DRIVER_RS_VERSION: "0.36.0" },
     });
     processes[1]!.child.exit(0);
@@ -367,7 +399,39 @@ describe("cua host entry", () => {
     expect(processes[2]).toMatchObject({ command: "open", args: ["-n", "-g", "-a", "CuaDriver", "--args", "serve"] });
     processes[2]!.child.exit(0);
     await flush();
-    expect(await harness.experimental_call("installState", null)).toMatchObject({ ok: true, step: "done" });
+    const state = await harness.experimental_call("installState", null);
+    expect(state).toMatchObject({ ok: true, step: "done" });
+    expect(state.tail).toContain("Verified 3 installer files against the checksums recorded for 0.36.0.");
+    await harness.experimental_dispose();
+  });
+
+  it("refuses to run an installer file that differs from the recorded checksum", async () => {
+    const record = recordFor("0.36.0");
+    const { entry, processes, written } = deps({
+      installed: false,
+      installer: { ...record, sha256: { ...record.sha256, "_install-rust.sh": "0".repeat(64) } },
+    });
+    const harness = experimental_createHostEntryHarness(entry);
+    await harness.experimental_call("install", { version: "0.36.0" });
+    await flush();
+    const state = await harness.experimental_call("installState", null);
+    expect(state).toMatchObject({ running: false, ok: false, step: "failed" });
+    expect(state.tail.at(-1)).toMatch(/_install-rust\.sh does not match the checksum recorded for 0\.36\.0.*refusing to run it/);
+    expect(written.map((file) => file.path)).toEqual([expect.stringMatching(/install\.sh$/)]);
+    expect(processes).toEqual([]);
+    expect(harness.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+    await harness.experimental_dispose();
+  });
+
+  it("refuses a pinned version it has no checksums for", async () => {
+    const { entry, processes, fetched } = deps({ installed: false });
+    const harness = experimental_createHostEntryHarness(entry);
+    await harness.experimental_call("install", { version: "0.37.0" });
+    await flush();
+    const state = await harness.experimental_call("installState", null);
+    expect(state.tail.at(-1)).toMatch(/no recorded installer checksums for Cua Driver 0\.37\.0 \(it records 0\.36\.0\)/);
+    expect(fetched).toEqual([]);
+    expect(processes).toEqual([]);
     await harness.experimental_dispose();
   });
 

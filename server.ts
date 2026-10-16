@@ -1186,7 +1186,7 @@ export default async function plugin(bb: BbPluginApi) {
             return {
               exitCode: 1,
               stderr: [
-                `This stops any running Cua Driver and runs Cua's official installer for ${targetLabel} on the target machine.`,
+                `This stops any running Cua Driver and runs Cua's official installer for ${targetLabel} on the target machine${target === null ? " (Cua's unpinned script)" : ", after checking its files against the checksums recorded in this plugin"}.`,
                 target === null ? "" : "Pass --latest for the newest release instead.",
                 "Re-run with --yes to confirm.",
               ].filter(Boolean).join(" "),

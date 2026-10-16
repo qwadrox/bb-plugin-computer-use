@@ -380,7 +380,7 @@ function InstallDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {idle
-              ? `This runs Cua's official ${host.driver?.platform === "win32" ? "install.ps1" : "install.sh"} installer on ${host.name} as your user, pinned to one release. It does not request administrator access.`
+              ? `This runs Cua's official ${host.driver?.platform === "win32" ? "install.ps1" : "install.sh"} installer on ${host.name} as your user. The tested release's installer comes from its GitHub release and runs only if every file matches the checksum recorded in this plugin; the newest release uses Cua's unpinned script. It does not request administrator access.`
               : install.running
                 ? `The official Cua installer is running on ${host.name}${install.target ? ` (v${install.target})` : " (newest release)"}.`
                 : failed

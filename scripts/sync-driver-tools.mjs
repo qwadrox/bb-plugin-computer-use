@@ -5,6 +5,11 @@
  * was tested against: the plugin offers it before a machine's own driver has
  * been read, and reports drift against it.
  *
+ * It also records src/driver-installer.json: the sha256 of each installer file
+ * of that release. Release assets are checked against the release's SHA256SUMS
+ * first; the `_install-common` helpers are not release assets and are read
+ * from the release tag. The plugin refuses to run installer files that differ.
+ *
  *   npm run sync:tools                         # cua-driver on PATH
  *   CUA_DRIVER_BIN=/path/to/cua-driver npm run sync:tools
  *   npm run sync:tools -- --summary out.md     # also write a Markdown change summary
@@ -12,13 +17,19 @@
  * The binary needs no macOS permissions and no running service for this.
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const binary = process.env.CUA_DRIVER_BIN ?? "cua-driver";
-const outputPath = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "driver-snapshot.json");
+const sourceDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+const outputPath = join(sourceDir, "driver-snapshot.json");
+const installerPath = join(sourceDir, "driver-installer.json");
+// Keep in step with INSTALLER_LAYOUT in src/installer.ts.
+const RELEASE_ASSETS = ["install.sh", "_install-rust.sh", "install.ps1"];
+const TAGGED_SOURCES = ["_install-common.sh", "_install-common.psm1"];
 const summaryFlag = process.argv.indexOf("--summary");
 const summaryPath = summaryFlag >= 0 ? process.argv[summaryFlag + 1] : undefined;
 const TIMEOUT_MS = 60_000;
@@ -115,13 +126,47 @@ function summarize(previous, next) {
   ].join("\n");
 }
 
+async function download(url) {
+  const response = await fetch(url, { redirect: "follow" });
+  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+const sha256 = (content) => createHash("sha256").update(content).digest("hex");
+
+async function installerChecksums(version) {
+  const tag = `cua-driver-rs-v${version}`;
+  const release = `https://github.com/trycua/cua/releases/download/${tag}`;
+  const published = new Map(
+    (await download(`${release}/SHA256SUMS`))
+      .toString("utf8")
+      .split("\n")
+      .map((line) => line.trim().split(/\s+\*?/))
+      .filter((parts) => parts.length === 2)
+      .map(([hash, name]) => [name, hash.toLowerCase()]),
+  );
+  const checksums = {};
+  for (const name of RELEASE_ASSETS) {
+    const actual = sha256(await download(`${release}/${name}`));
+    if (published.get(name) !== actual) throw new Error(`${tag}/${name} does not match the release's SHA256SUMS`);
+    checksums[name] = actual;
+  }
+  for (const name of TAGGED_SOURCES) {
+    checksums[name] = sha256(await download(`https://raw.githubusercontent.com/trycua/cua/${tag}/libs/cua-driver/scripts/${name}`));
+  }
+  return { driverVersion: version, sha256: sortKeys(checksums) };
+}
+
 const { version, tools } = await listTools();
+if (typeof version !== "string") throw new Error(`${binary} did not report its version; cannot record installer checksums`);
 const snapshot = {
   driverVersion: version,
   tools: tools.map(keep).sort((a, b) => a.name.localeCompare(b.name)),
 };
 const previous = existsSync(outputPath) ? JSON.parse(readFileSync(outputPath, "utf8")) : null;
+const installer = await installerChecksums(version);
 writeFileSync(outputPath, `${JSON.stringify(snapshot, null, 2)}\n`);
-const summary = summarize(previous, snapshot);
+writeFileSync(installerPath, `${JSON.stringify(installer, null, 2)}\n`);
+const summary = `${summarize(previous, snapshot)}\n\nInstaller checksums recorded for ${Object.keys(installer.sha256).join(", ")}.`;
 if (summaryPath !== undefined) writeFileSync(summaryPath, `${summary}\n`);
 console.log(summary);

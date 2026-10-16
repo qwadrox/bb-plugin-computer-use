@@ -65,6 +65,7 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
     "sync:tools": "node scripts/sync-driver-tools.mjs",
+    "test:network": "CUA_NETWORK=1 vitest run src/installer.test.ts",
     "test:live": "CUA_LIVE=1 vitest run live.test.ts"
   }
 }

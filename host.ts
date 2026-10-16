@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { access, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { posix, win32 } from "node:path";
 import { createInterface } from "node:readline";
@@ -18,6 +18,7 @@ import {
   type ToolCallResult,
   type ToolContentPart,
 } from "./src/contract.js";
+import { INSTALLER_LAYOUT, TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import { McpStdioClient, type McpChild, type McpContentPart } from "./src/mcp-client.js";
 
 export const PLUGIN_VERSION = "0.2.0";
@@ -29,6 +30,7 @@ const DEFAULT_IDLE_DISCONNECT_MS = 10 * 60_000;
 const STRUCTURED_TEXT_LIMIT = 200_000;
 const INSTALL_TAIL_LINES = 80;
 
+/** The newest release, through the official one-line installer; pinned installs come from the release itself. */
 export const INSTALL_SCRIPT_URLS = {
   posix: "https://cua.ai/driver/install.sh",
   windows: "https://cua.ai/driver/install.ps1",
@@ -51,13 +53,16 @@ export interface HostDependencies {
   readonly env: NodeJS.ProcessEnv;
   readonly homeDir: string;
   readonly idleDisconnectMs?: number;
+  /** The installer checksums recorded for the tested driver; tests swap in their own. */
+  readonly installer?: InstallerRecord;
   now(): number;
   sleep(ms: number): Promise<void>;
   fileExists(path: string): Promise<boolean>;
   exec(command: string, args: readonly string[], timeoutMs: number): Promise<ExecResult>;
   spawnMcp(command: string, args: readonly string[]): McpChild;
-  fetchText(url: string, signal: AbortSignal): Promise<string>;
-  writeFile(path: string, content: string): Promise<void>;
+  fetchBytes(url: string, signal: AbortSignal): Promise<Uint8Array>;
+  makeDir(path: string): Promise<void>;
+  writeFile(path: string, content: Uint8Array): Promise<void>;
   /** `env` is added to the host's own environment. */
   spawnProcess(command: string, args: readonly string[], env?: Readonly<Record<string, string>>): ProcessChild;
 }
@@ -428,6 +433,52 @@ export function createCuaHostEntry(deps: HostDependencies) {
     });
   }
 
+  async function downloadNewest(context: InstallContext): Promise<string> {
+    const isWindows = deps.platform === "win32";
+    const url = isWindows ? INSTALL_SCRIPT_URLS.windows : INSTALL_SCRIPT_URLS.posix;
+    pushInstallLine(`Downloading ${url} (newest release, not checksum-pinned)`, "download");
+    const script = await deps.fetchBytes(url, context.lifecycle.signal);
+    const scriptPath = (isWindows ? win32 : posix).join(
+      context.experimental_paths.tempDir,
+      isWindows ? "cua-driver-install.ps1" : "cua-driver-install.sh",
+    );
+    await deps.writeFile(scriptPath, script);
+    return scriptPath;
+  }
+
+  /**
+   * Downloads the release's own installer files and refuses to run any whose
+   * sha256 differs from the one recorded when this plugin was tested. The
+   * installer then checks the driver archive against the release's SHA256SUMS
+   * (and its Sigstore signature when cosign is installed).
+   */
+  async function downloadPinned(context: InstallContext, version: string): Promise<string> {
+    const isWindows = deps.platform === "win32";
+    const record = deps.installer ?? TESTED_INSTALLER;
+    const files = installerFiles(isWindows ? "windows" : "posix", version, record);
+    if (files === null) {
+      throw new Error(
+        `this plugin has no recorded installer checksums for Cua Driver ${version} (it records ${record.driverVersion})`,
+      );
+    }
+    const path = isWindows ? win32 : posix;
+    const dir = path.join(context.experimental_paths.tempDir, releaseTag(version));
+    await deps.makeDir(dir);
+    for (const file of files) {
+      pushInstallLine(`Downloading ${file.url}`, "download");
+      const content = await deps.fetchBytes(file.url, context.lifecycle.signal);
+      const actual = sha256Hex(content);
+      if (actual !== file.sha256) {
+        throw new Error(
+          `${file.name} does not match the checksum recorded for ${version} (expected ${file.sha256}, got ${actual}); refusing to run it`,
+        );
+      }
+      await deps.writeFile(path.join(dir, file.name), content);
+    }
+    pushInstallLine(`Verified ${String(files.length)} installer files against the checksums recorded for ${version}.`, "verify");
+    return path.join(dir, INSTALLER_LAYOUT[isWindows ? "windows" : "posix"].entry);
+  }
+
   async function runInstall(context: InstallContext, version: string | null): Promise<void> {
     const installLease = context.experimental_retainWorker();
     const isWindows = deps.platform === "win32";
@@ -438,14 +489,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         disconnect("updating cua-driver");
         await runStep(existing, ["stop"], "stop-service").catch(() => null);
       }
-      const url = isWindows ? INSTALL_SCRIPT_URLS.windows : INSTALL_SCRIPT_URLS.posix;
-      pushInstallLine(`Downloading ${url}`, "download");
-      const script = await deps.fetchText(url, context.lifecycle.signal);
-      const scriptPath = (isWindows ? win32 : posix).join(
-        context.experimental_paths.tempDir,
-        isWindows ? "cua-driver-install.ps1" : "cua-driver-install.sh",
-      );
-      await deps.writeFile(scriptPath, script);
+      const scriptPath = version === null ? await downloadNewest(context) : await downloadPinned(context, version);
       // The official installer's own pin: an exact release instead of the newest.
       const env = version === null ? undefined : { CUA_DRIVER_RS_VERSION: version };
       const code = isWindows
@@ -617,11 +661,12 @@ export default createCuaHostEntry({
   spawnMcp(command, args) {
     return spawn(command, [...args], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   },
-  async fetchText(url, signal) {
+  async fetchBytes(url, signal) {
     const response = await fetch(url, { signal, redirect: "follow" });
-    if (!response.ok) throw new Error(`download failed: HTTP ${String(response.status)}`);
-    return response.text();
+    if (!response.ok) throw new Error(`download failed: HTTP ${String(response.status)} for ${url}`);
+    return new Uint8Array(await response.arrayBuffer());
   },
+  makeDir: (path) => mkdir(path, { recursive: true, mode: 0o700 }).then(() => undefined),
   writeFile: (path, content) => writeFile(path, content, { mode: 0o700 }),
   spawnProcess(command, args, env) {
     return spawn(command, [...args], {
