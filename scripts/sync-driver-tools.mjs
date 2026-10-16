@@ -21,7 +21,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,11 @@ const binary = process.env.CUA_DRIVER_BIN ?? "cua-driver";
 const sourceDir = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const outputPath = join(sourceDir, "driver-snapshot.json");
 const installerPath = join(sourceDir, "driver-installer.json");
-// Keep in step with INSTALLER_LAYOUT in src/installer.ts.
+// The values the plugin uses, kept here because this script runs under plain Node and
+// cannot import src/*.ts. src/installer.test.ts and src/mcp-client.test.ts assert they match.
+export const PROTOCOL_VERSION = "2025-06-18";
+const RELEASE_DOWNLOAD_BASE = "https://github.com/trycua/cua/releases/download";
+const SOURCE_BASE = "https://raw.githubusercontent.com/trycua/cua";
 const RELEASE_ASSETS = ["install.sh", "_install-rust.sh", "install.ps1"];
 const TAGGED_SOURCES = ["_install-common.sh", "_install-common.psm1"];
 const summaryFlag = process.argv.indexOf("--summary");
@@ -69,7 +73,7 @@ function listTools() {
     child.once("error", reject);
     (async () => {
       const init = await send("initialize", {
-        protocolVersion: "2025-06-18",
+        protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
         clientInfo: { name: "bb-plugin-computer-use-sync", version: "0" },
       });
@@ -138,11 +142,30 @@ async function download(url) {
 
 const sha256 = (content) => createHash("sha256").update(content).digest("hex");
 
+export function releaseTag(version) {
+  return `cua-driver-rs-v${version}`;
+}
+
+/**
+ * The installer files of one release, with where each comes from. `released`
+ * files are listed in the release's SHA256SUMS; the others are read from the tag.
+ */
+export function installerSources(version) {
+  const tag = releaseTag(version);
+  return [
+    ...RELEASE_ASSETS.map((name) => ({ name, url: `${RELEASE_DOWNLOAD_BASE}/${tag}/${name}`, released: true })),
+    ...TAGGED_SOURCES.map((name) => ({
+      name,
+      url: `${SOURCE_BASE}/${tag}/libs/cua-driver/scripts/${name}`,
+      released: false,
+    })),
+  ];
+}
+
 async function installerChecksums(version) {
-  const tag = `cua-driver-rs-v${version}`;
-  const release = `https://github.com/trycua/cua/releases/download/${tag}`;
+  const tag = releaseTag(version);
   const published = new Map(
-    (await download(`${release}/SHA256SUMS`))
+    (await download(`${RELEASE_DOWNLOAD_BASE}/${tag}/SHA256SUMS`))
       .toString("utf8")
       .split("\n")
       .map((line) => line.trim().split(/\s+\*?/))
@@ -150,27 +173,32 @@ async function installerChecksums(version) {
       .map(([hash, name]) => [name, hash.toLowerCase()]),
   );
   const checksums = {};
-  for (const name of RELEASE_ASSETS) {
-    const actual = sha256(await download(`${release}/${name}`));
-    if (published.get(name) !== actual) throw new Error(`${tag}/${name} does not match the release's SHA256SUMS`);
+  for (const { name, url, released } of installerSources(version)) {
+    const actual = sha256(await download(url));
+    if (released && published.get(name) !== actual) {
+      throw new Error(`${tag}/${name} does not match the release's SHA256SUMS`);
+    }
     checksums[name] = actual;
-  }
-  for (const name of TAGGED_SOURCES) {
-    checksums[name] = sha256(await download(`https://raw.githubusercontent.com/trycua/cua/${tag}/libs/cua-driver/scripts/${name}`));
   }
   return { driverVersion: version, sha256: sortKeys(checksums) };
 }
 
-const { version, tools } = await listTools();
-if (typeof version !== "string") throw new Error(`${binary} did not report its version; cannot record installer checksums`);
-const snapshot = {
-  driverVersion: version,
-  tools: tools.map(keep).sort((a, b) => a.name.localeCompare(b.name)),
-};
-const previous = existsSync(outputPath) ? JSON.parse(readFileSync(outputPath, "utf8")) : null;
-const installer = await installerChecksums(version);
-writeFileSync(outputPath, `${JSON.stringify(snapshot, null, 2)}\n`);
-writeFileSync(installerPath, `${JSON.stringify(installer, null, 2)}\n`);
-const summary = `${summarize(previous, snapshot)}\n\nInstaller checksums recorded for ${Object.keys(installer.sha256).join(", ")}.`;
-if (summaryPath !== undefined) writeFileSync(summaryPath, `${summary}\n`);
-console.log(summary);
+async function main() {
+  const { version, tools } = await listTools();
+  if (typeof version !== "string") throw new Error(`${binary} did not report its version; cannot record installer checksums`);
+  const snapshot = {
+    driverVersion: version,
+    tools: tools.map(keep).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+  const previous = existsSync(outputPath) ? JSON.parse(readFileSync(outputPath, "utf8")) : null;
+  const installer = await installerChecksums(version);
+  writeFileSync(outputPath, `${JSON.stringify(snapshot, null, 2)}\n`);
+  writeFileSync(installerPath, `${JSON.stringify(installer, null, 2)}\n`);
+  const summary = `${summarize(previous, snapshot)}\n\nInstaller checksums recorded for ${Object.keys(installer.sha256).join(", ")}.`;
+  if (summaryPath !== undefined) writeFileSync(summaryPath, `${summary}\n`);
+  console.log(summary);
+}
+
+// Importing the module (the tests do) must not run a sync.
+const isEntryPoint = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isEntryPoint) await main();

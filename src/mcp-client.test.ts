@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { McpStdioClient, type McpChild } from "./mcp-client.js";
+import { McpStdioClient, PROTOCOL_VERSION, type McpChild } from "./mcp-client.js";
+import { PROTOCOL_VERSION as SYNC_PROTOCOL_VERSION } from "../scripts/sync-driver-tools.mjs";
 
 function fakeChild() {
   const stdin = new PassThrough();
@@ -96,5 +97,11 @@ describe("McpStdioClient", () => {
     expect(result.content).toHaveLength(2);
     expect(result.isError).toBe(false);
     expect(result.structuredContent).toEqual({ elements: [] });
+  });
+});
+
+describe("sync script handshake", () => {
+  it("initializes with the protocol version the client uses", () => {
+    expect(SYNC_PROTOCOL_VERSION).toBe(PROTOCOL_VERSION);
   });
 });

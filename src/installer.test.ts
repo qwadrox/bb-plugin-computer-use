@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { TESTED_INSTALLER, installerFiles, sha256Hex } from "./installer.js";
+import { TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex } from "./installer.js";
 import { TESTED_DRIVER_VERSION } from "./snapshot.js";
+import { installerSources, releaseTag as scriptReleaseTag } from "../scripts/sync-driver-tools.mjs";
+
+type Source = { name: string; url: string };
 
 describe("installer checksums", () => {
   it("are recorded for the same driver version as the tool snapshot", () => {
@@ -23,6 +26,17 @@ describe("installer checksums", () => {
   it("has nothing for another version, or a record missing a file", () => {
     expect(installerFiles("posix", "0.0.1")).toBeNull();
     expect(installerFiles("windows", "1.0.0", { driverVersion: "1.0.0", sha256: { "install.ps1": "a".repeat(64) } })).toBeNull();
+  });
+
+  it("are fetched by the sync script from the URLs the installers load them from", () => {
+    const byName = (a: Source, b: Source) => a.name.localeCompare(b.name);
+    const planned = (installerSources(TESTED_DRIVER_VERSION) as Source[]).map(({ name, url }) => ({ name, url })).sort(byName);
+    const loaded = (["posix", "windows"] as const)
+      .flatMap((platform) => installerFiles(platform, TESTED_DRIVER_VERSION) ?? [])
+      .map(({ name, url }) => ({ name, url }))
+      .sort(byName);
+    expect(planned).toEqual(loaded);
+    expect(scriptReleaseTag(TESTED_DRIVER_VERSION)).toBe(releaseTag(TESTED_DRIVER_VERSION));
   });
 
   // CUA_NETWORK=1: downloads the real files, as the host does before a pinned install.

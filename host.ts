@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { posix, win32 } from "node:path";
+import { posix, win32, type PlatformPath } from "node:path";
 import { createInterface } from "node:readline";
 import {
   experimental_defineHostEntry,
@@ -21,6 +21,7 @@ import {
 import { bridgeLayout, bridgeState, callBrowser, installBridge, uninstallBridge } from "./src/browser-host.js";
 import { INSTALLER_LAYOUT, TESTED_INSTALLER, installerFiles, releaseTag, sha256Hex, type InstallerRecord } from "./src/installer.js";
 import { McpStdioClient, type McpChild, type McpContentPart } from "./src/mcp-client.js";
+import { errorMessage } from "./src/errors.js";
 import { CUA_INSTALL_DOCS_URL, INSTALL_SCRIPT_URLS } from "./src/links.js";
 import packageJson from "./package.json";
 
@@ -74,22 +75,61 @@ interface InstallContext {
   lifecycle: { signal: AbortSignal };
 }
 
+/** Everything that differs between Windows and the posix hosts. */
+interface PlatformProfile {
+  /** The installer and link key: `windows` or `posix`. */
+  readonly family: keyof typeof INSTALLER_LAYOUT;
+  readonly path: PlatformPath;
+  readonly executable: string;
+  /** File name the newest release's installer is saved under. */
+  readonly installScriptName: string;
+  /** Runs an installer script; the script path is appended to `args`. */
+  readonly installerCommand: { readonly command: string; readonly args: readonly string[] };
+}
+
+const WINDOWS_PROFILE: PlatformProfile = {
+  family: "windows",
+  path: win32,
+  executable: "cua-driver.exe",
+  installScriptName: "cua-driver-install.ps1",
+  installerCommand: { command: "powershell", args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"] },
+};
+
+const POSIX_PROFILE: PlatformProfile = {
+  family: "posix",
+  path: posix,
+  executable: "cua-driver",
+  installScriptName: "cua-driver-install.sh",
+  installerCommand: { command: "/bin/bash", args: [] },
+};
+
+function platformProfile(platform: NodeJS.Platform): PlatformProfile {
+  return platform === "win32" ? WINDOWS_PROFILE : POSIX_PROFILE;
+}
+
+/**
+ * Starts the daemon through LaunchServices, so it keeps CuaDriver.app's own
+ * macOS permissions. `grantFlags` are the `--grant` options it should carry.
+ */
+function startDaemonCommand(grantFlags: readonly string[] = []): { command: string; args: string[] } {
+  return { command: "open", args: ["-n", "-g", "-a", "CuaDriver", "--args", "serve", ...grantFlags] };
+}
+
 export function candidateBinaryPaths(deps: Pick<HostDependencies, "platform" | "env" | "homeDir">): string[] {
-  const isWindows = deps.platform === "win32";
-  const path = isWindows ? win32 : posix;
-  const executable = isWindows ? "cua-driver.exe" : "cua-driver";
+  const profile = platformProfile(deps.platform);
+  const { path } = profile;
   const candidates: string[] = [];
   const explicit = deps.env.CUA_DRIVER_PATH;
   if (explicit !== undefined && explicit.length > 0) candidates.push(explicit);
   const pathEntries = (deps.env.PATH ?? "").split(path.delimiter).filter((entry) => entry.length > 0);
-  for (const entry of pathEntries) candidates.push(path.join(entry, executable));
-  if (isWindows) {
+  for (const entry of pathEntries) candidates.push(path.join(entry, profile.executable));
+  if (profile.family === "windows") {
     const localAppData = deps.env.LOCALAPPDATA;
     if (localAppData !== undefined && localAppData.length > 0) {
-      candidates.push(path.join(localAppData, "Programs", "Cua", "cua-driver", "bin", executable));
+      candidates.push(path.join(localAppData, "Programs", "Cua", "cua-driver", "bin", profile.executable));
     }
   } else {
-    candidates.push(path.join(deps.homeDir, ".local", "bin", executable));
+    candidates.push(path.join(deps.homeDir, ".local", "bin", profile.executable));
   }
   return [...new Set(candidates)];
 }
@@ -280,8 +320,8 @@ export function createCuaHostEntry(deps: HostDependencies) {
       );
     }
     if (current !== null) await deps.exec(binary, ["stop"], PROBE_TIMEOUT_MS);
-    // LaunchServices, so the daemon keeps CuaDriver.app's own macOS permissions.
-    await deps.exec("open", ["-n", "-g", "-a", "CuaDriver", "--args", "serve", ...flags], PROBE_TIMEOUT_MS);
+    const start = startDaemonCommand(flags);
+    await deps.exec(start.command, start.args, PROBE_TIMEOUT_MS);
     const deadline = deps.now() + DAEMON_START_TIMEOUT_MS;
     while (deps.now() < deadline) {
       const status = await deps.exec(binary, ["status"], PROBE_TIMEOUT_MS);
@@ -328,7 +368,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         const stderr = next.recentStderr;
         next.close("initialize failed");
         throw new Error(
-          `cua-driver mcp did not start: ${error instanceof Error ? error.message : String(error)}${
+          `cua-driver mcp did not start: ${errorMessage(error)}${
             stderr.length > 0 ? `\n${stderr}` : ""
           }`,
         );
@@ -359,7 +399,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
       (error: unknown): ExecResult => ({
         code: null,
         stdout: "",
-        stderr: error instanceof Error ? error.message : String(error),
+        stderr: errorMessage(error),
       }),
     );
   }
@@ -442,14 +482,11 @@ export function createCuaHostEntry(deps: HostDependencies) {
   }
 
   async function downloadNewest(context: InstallContext): Promise<string> {
-    const isWindows = deps.platform === "win32";
-    const url = isWindows ? INSTALL_SCRIPT_URLS.windows : INSTALL_SCRIPT_URLS.posix;
+    const profile = platformProfile(deps.platform);
+    const url = INSTALL_SCRIPT_URLS[profile.family];
     pushInstallLine(`Downloading ${url} (newest release, not checksum-pinned)`, "download");
     const script = await deps.fetchBytes(url, context.lifecycle.signal);
-    const scriptPath = (isWindows ? win32 : posix).join(
-      context.experimental_paths.tempDir,
-      isWindows ? "cua-driver-install.ps1" : "cua-driver-install.sh",
-    );
+    const scriptPath = profile.path.join(context.experimental_paths.tempDir, profile.installScriptName);
     await deps.writeFile(scriptPath, script);
     return scriptPath;
   }
@@ -461,15 +498,15 @@ export function createCuaHostEntry(deps: HostDependencies) {
    * (and its Sigstore signature when cosign is installed).
    */
   async function downloadPinned(context: InstallContext, version: string): Promise<string> {
-    const isWindows = deps.platform === "win32";
+    const profile = platformProfile(deps.platform);
     const record = deps.installer ?? TESTED_INSTALLER;
-    const files = installerFiles(isWindows ? "windows" : "posix", version, record);
+    const files = installerFiles(profile.family, version, record);
     if (files === null) {
       throw new Error(
         `this plugin has no recorded installer checksums for Cua Driver ${version} (it records ${record.driverVersion})`,
       );
     }
-    const path = isWindows ? win32 : posix;
+    const { path } = profile;
     const dir = path.join(context.experimental_paths.tempDir, releaseTag(version));
     await deps.makeDir(dir);
     for (const file of files) {
@@ -484,12 +521,12 @@ export function createCuaHostEntry(deps: HostDependencies) {
       await deps.writeFile(path.join(dir, file.name), content);
     }
     pushInstallLine(`Verified ${String(files.length)} installer files against the checksums recorded for ${version}.`, "verify");
-    return path.join(dir, INSTALLER_LAYOUT[isWindows ? "windows" : "posix"].entry);
+    return path.join(dir, INSTALLER_LAYOUT[profile.family].entry);
   }
 
   async function runInstall(context: InstallContext, version: string | null): Promise<void> {
     const installLease = context.experimental_retainWorker();
-    const isWindows = deps.platform === "win32";
+    const profile = platformProfile(deps.platform);
     try {
       const existing = await resolveBinary();
       if (existing !== null) {
@@ -500,9 +537,8 @@ export function createCuaHostEntry(deps: HostDependencies) {
       const scriptPath = version === null ? await downloadNewest(context) : await downloadPinned(context, version);
       // The official installer's own pin: an exact release instead of the newest.
       const env = version === null ? undefined : { CUA_DRIVER_RS_VERSION: version };
-      const code = isWindows
-        ? await runStep("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath], "install", env)
-        : await runStep("/bin/bash", [scriptPath], "install", env);
+      const installer = profile.installerCommand;
+      const code = await runStep(installer.command, [...installer.args, scriptPath], "install", env);
       if (code !== 0) {
         installState = { ...installState, exitCode: code };
         throw new Error(`installer exited with ${String(code)}`);
@@ -512,10 +548,11 @@ export function createCuaHostEntry(deps: HostDependencies) {
       if (binary === null) {
         throw new Error("installer finished but cua-driver was not found on PATH or in the installer location");
       }
-      if (isWindows) {
+      if (profile.family === "windows") {
         await runStep(binary, ["autostart", "kick"], "autostart").catch(() => null);
       } else if (deps.platform === "darwin") {
-        await runStep("open", ["-n", "-g", "-a", "CuaDriver", "--args", "serve"], "start-service").catch(() => null);
+        const start = startDaemonCommand();
+        await runStep(start.command, start.args, "start-service").catch(() => null);
       }
       installState = {
         ...installState,
@@ -534,7 +571,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         step: "failed",
         finishedAt: new Date(deps.now()).toISOString(),
       };
-      pushInstallLine(`Install failed: ${error instanceof Error ? error.message : String(error)}`);
+      pushInstallLine(`Install failed: ${errorMessage(error)}`);
     } finally {
       void installLease.dispose();
     }
