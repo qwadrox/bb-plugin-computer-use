@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { errorMessage } from "./errors.js";
 
 export interface McpChild {
   readonly stdin: NodeJS.WritableStream;
@@ -33,7 +34,7 @@ interface Pending {
   reject(error: Error): void;
 }
 
-const PROTOCOL_VERSION = "2025-06-18";
+export const PROTOCOL_VERSION = "2025-06-18";
 
 export class McpStdioClient {
   private nextId = 1;
@@ -51,7 +52,7 @@ export class McpStdioClient {
     });
     child.once("exit", (code) => this.handleClose(`process exited (${String(code)})`));
     child.once("error", (error) =>
-      this.handleClose(`process error: ${error instanceof Error ? error.message : String(error)}`),
+      this.handleClose(`process error: ${errorMessage(error)}`),
     );
   }
 

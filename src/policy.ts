@@ -57,15 +57,16 @@ export function describeDecision(decision: ProviderDecision): string {
   }
 }
 
-export function normalizePolicy(input: unknown): RoutingPolicy {
-  if (typeof input !== "object" || input === null) return DEFAULT_POLICY;
-  const candidate = input as { mode?: unknown; overrides?: unknown };
-  const mode = ROUTING_MODES.includes(candidate.mode as RoutingMode)
-    ? (candidate.mode as RoutingMode)
-    : DEFAULT_POLICY.mode;
+/** The routing mode a value names, or null. Stored values and CLI arguments are checked here. */
+export function parseRoutingMode(value: unknown): RoutingMode | null {
+  return ROUTING_MODES.includes(value as RoutingMode) ? (value as RoutingMode) : null;
+}
+
+/** Per-provider overrides from a stored value. Unknown values and `inherit` entries are dropped. */
+export function normalizeProviderOverrides(input: unknown): Record<string, ProviderOverride> {
   const overrides: Record<string, ProviderOverride> = {};
-  if (typeof candidate.overrides === "object" && candidate.overrides !== null) {
-    for (const [providerId, value] of Object.entries(candidate.overrides)) {
+  if (typeof input === "object" && input !== null) {
+    for (const [providerId, value] of Object.entries(input)) {
       if (
         providerId.length > 0 &&
         PROVIDER_OVERRIDES.includes(value as ProviderOverride) &&
@@ -75,5 +76,14 @@ export function normalizePolicy(input: unknown): RoutingPolicy {
       }
     }
   }
-  return { mode, overrides };
+  return overrides;
+}
+
+export function normalizePolicy(input: unknown): RoutingPolicy {
+  if (typeof input !== "object" || input === null) return DEFAULT_POLICY;
+  const candidate = input as { mode?: unknown; overrides?: unknown };
+  return {
+    mode: parseRoutingMode(candidate.mode) ?? DEFAULT_POLICY.mode,
+    overrides: normalizeProviderOverrides(candidate.overrides),
+  };
 }

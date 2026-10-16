@@ -99,3 +99,20 @@ export const META_TOOLS: readonly MetaTool[] = [
     labels: { pending: "Checking Cua Driver", completed: "Checked Cua Driver" },
   },
 ];
+
+/**
+ * What reaches Cua Driver for a driver tool: the agent's object untouched,
+ * minus arguments the plugin owns. Cua Driver is the only validator of its API.
+ */
+export function forwardableArguments(
+  toolName: string,
+  raw: unknown,
+): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: {} };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, error: `Arguments for ${toolName} must be a JSON object.` };
+  }
+  const value: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  for (const key of PLUGIN_MANAGED_ARGUMENTS) delete value[key];
+  return { ok: true, value };
+}

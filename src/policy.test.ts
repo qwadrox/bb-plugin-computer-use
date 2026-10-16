@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POLICY, normalizePolicy, resolveProviderDecision } from "./policy.js";
+import {
+  DEFAULT_POLICY,
+  normalizePolicy,
+  normalizeProviderOverrides,
+  parseRoutingMode,
+  resolveProviderDecision,
+} from "./policy.js";
 
 describe("resolveProviderDecision", () => {
   it("keeps native computer use for codex in prefer-native mode", () => {
@@ -34,5 +40,21 @@ describe("normalizePolicy", () => {
       normalizePolicy({ mode: "bogus", overrides: { pi: "cua", codex: "inherit", x: "nope", "": "cua" } }),
     ).toEqual({ mode: "prefer-native", overrides: { pi: "cua" } });
     expect(normalizePolicy(null)).toEqual(DEFAULT_POLICY);
+  });
+});
+
+describe("parseRoutingMode", () => {
+  it("accepts only the routing modes", () => {
+    expect(parseRoutingMode("off")).toBe("off");
+    expect(parseRoutingMode("cua-everywhere")).toBe("cua-everywhere");
+    expect(parseRoutingMode("bogus")).toBeNull();
+    expect(parseRoutingMode(undefined)).toBeNull();
+  });
+});
+
+describe("normalizeProviderOverrides", () => {
+  it("keeps only real overrides for non-empty provider ids", () => {
+    expect(normalizeProviderOverrides({ pi: "cua", codex: "inherit", x: "nope", "": "cua" })).toEqual({ pi: "cua" });
+    expect(normalizeProviderOverrides("cua")).toEqual({});
   });
 });

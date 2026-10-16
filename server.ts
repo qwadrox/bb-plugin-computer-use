@@ -3,11 +3,13 @@ import { z } from "zod";
 import {
   META_TOOLS,
   PERMISSIVE_SCHEMA,
-  PLUGIN_MANAGED_ARGUMENTS,
   agentToolName,
   driverToolName,
   overridableSchema,
+  forwardableArguments,
 } from "./src/catalog.js";
+import { cuaCli } from "./src/cli.js";
+import { errorMessage } from "./src/errors.js";
 import { BROWSER_TOOLS, BROWSER_TOOL_NAMES, browserToolResult, type BrowserTool } from "./src/browser-tools.js";
 import {
   IDLE_INSTALL_STATE,
@@ -24,7 +26,7 @@ import {
   type InstallState,
   type ToolCallResult,
 } from "./src/contract.js";
-import { diffCatalogs, formatDrift, hasDrift, summarizeDrift, type DriftReport } from "./src/drift.js";
+import { diffCatalogs, driftView, formatDrift, hasDrift, summarizeDrift, type DriftReport } from "./src/drift.js";
 import { firstSentence, isReadOnly, normalizeDriverTools, type DriverCatalog, type DriverTool } from "./src/driver-tools.js";
 import {
   EXPOSURES,
@@ -48,13 +50,14 @@ import {
   ROUTING_MODES,
   describeDecision,
   hasNativeComputerUse,
-  normalizePolicy,
+  normalizeProviderOverrides,
+  parseRoutingMode,
   resolveProviderDecision,
   type ProviderOverride,
   type RoutingMode,
   type RoutingPolicy,
 } from "./src/policy.js";
-import { CUA_INSTALL_DOCS_URL, EXTENSION_STORE_URL, UNPACKED_EXTENSION_ID, manualInstallCommands } from "./src/links.js";
+import { CUA_INSTALL_DOCS_URL, UNPACKED_EXTENSION_ID, manualInstallCommands } from "./src/links.js";
 import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./src/snapshot.js";
 
 const MODE_KEY = "routing-mode";
@@ -201,8 +204,7 @@ export const rpcContract = defineRpcContract({
 
 /** What the settings app reads: getState and browserState. */
 export type State = z.infer<typeof stateSchema>;
-type ToolView = z.infer<typeof toolViewSchema>;
-type DriftView = z.infer<typeof driftViewSchema>;
+export type ToolView = z.infer<typeof toolViewSchema>;
 export type BrowserView = z.infer<typeof browserViewSchema>;
 
 interface SettingsSnapshot {
@@ -214,7 +216,7 @@ interface SettingsSnapshot {
 }
 
 /** A machine's catalog with a name index and its drift from the tested release. */
-interface IndexedCatalog {
+export interface IndexedCatalog {
   catalog: DriverCatalog;
   byName: Map<string, DriverTool>;
   /** Null for the bundled snapshot, which is not any machine's own list. */
@@ -235,10 +237,6 @@ function indexMachineCatalog(catalog: DriverCatalog): MachineCatalog {
 }
 
 const SNAPSHOT_INDEX: IndexedCatalog = { catalog: SNAPSHOT_CATALOG, byName: indexByName(SNAPSHOT_CATALOG), drift: null };
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /** `<prefix>-<suffix>` within the label limit. The prefix gives way, so the suffix that makes the label unique stays whole. */
 function sessionLabel(prefix: string, suffix: string): string {
@@ -304,13 +302,6 @@ function setupGuidance(status: DriverStatus, hostId: string): string | null {
   ].join("\n\n");
 }
 
-/** A tool result as CLI text. Images are described: their base64 would flood a terminal. */
-function contentText(result: ToolCallResult): string {
-  return result.content
-    .map((part) => (part.type === "text" ? part.text : `[image ${part.mimeType}, ${part.data.length} base64 chars]`))
-    .join("\n");
-}
-
 function toolResultText(result: ToolCallResult): string {
   const content = result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
   if (result.structured === undefined) return content;
@@ -321,25 +312,15 @@ function toolResultText(result: ToolCallResult): string {
   }
 }
 
-function driftView(report: DriftReport): DriftView {
-  return { ...report, drifted: hasDrift(report), summary: summarizeDrift(report) };
+/** Who a driver call is for (its thread, which sets the session and approvals) and the caller's abort signal. */
+export interface CallOptions {
+  threadId?: string;
+  signal?: AbortSignal;
 }
 
-/**
- * What reaches Cua Driver for a driver tool: the agent's object untouched,
- * minus arguments the plugin owns. Cua Driver is the only validator of its API.
- */
-function forwardableArguments(
-  toolName: string,
-  raw: unknown,
-): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
-  if (raw === undefined || raw === null) return { ok: true, value: {} };
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, error: `Arguments for ${toolName} must be a JSON object.` };
-  }
-  const value: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
-  for (const key of PLUGIN_MANAGED_ARGUMENTS) delete value[key];
-  return { ok: true, value };
+/** Options for a host call to one machine. The signal is passed only when there is one. */
+function hostCallOptions(hostId: string, signal?: AbortSignal): { hostId: string; signal?: AbortSignal } {
+  return { hostId, ...(signal === undefined ? {} : { signal }) };
 }
 
 /** Cua Driver ends a session with its transport; reusing the label is then refused. */
@@ -426,10 +407,6 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "settings" });
   });
 
-  function readMode(value: unknown): RoutingMode | null {
-    return ROUTING_MODES.includes(value as RoutingMode) ? (value as RoutingMode) : null;
-  }
-
   /**
    * Up to 0.3 the mode was a declared setting, which bb also rendered in its
    * Configuration form next to the Routing mode card. Carry a stored value over.
@@ -437,7 +414,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function legacyMode(): Promise<RoutingMode | null> {
     try {
       const { values } = await bb.sdk.plugins.getSettings({ pluginId: bb.pluginId });
-      const legacy = readMode(values.mode);
+      const legacy = parseRoutingMode(values.mode);
       if (legacy !== null) await bb.storage.kv.set(MODE_KEY, legacy);
       return legacy;
     } catch (error) {
@@ -446,8 +423,11 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  let routingMode: RoutingMode = readMode(await bb.storage.kv.get<unknown>(MODE_KEY)) ?? (await legacyMode()) ?? DEFAULT_POLICY.mode;
-  let overrides = normalizePolicy({ mode: routingMode, overrides: await bb.storage.kv.get<unknown>(OVERRIDES_KEY) }).overrides;
+  /** The routing policy in force. Changes replace it; nothing mutates it in place. */
+  let routing: RoutingPolicy = {
+    mode: parseRoutingMode(await bb.storage.kv.get<unknown>(MODE_KEY)) ?? (await legacyMode()) ?? DEFAULT_POLICY.mode,
+    overrides: normalizeProviderOverrides(await bb.storage.kv.get<unknown>(OVERRIDES_KEY)),
+  };
   let exposureOverrides = normalizeOverrides(await bb.storage.kv.get<unknown>(EXPOSURE_KEY));
   let browserExtension = (await bb.storage.kv.get<unknown>(BROWSER_EXTENSION_KEY)) === true;
   const statusCache = new Map<string, DriverStatus>();
@@ -629,12 +609,8 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "worker-exit", hostId });
   });
 
-  function policy(): RoutingPolicy {
-    return { mode: routingMode, overrides };
-  }
-
   async function refreshStatus(hostId: string, probeDaemon: boolean, signal?: AbortSignal): Promise<DriverStatus> {
-    const status = await host.call("status", { probeDaemon }, { hostId, ...(signal ? { signal } : {}) });
+    const status = await host.call("status", { probeDaemon }, hostCallOptions(hostId, signal));
     statusCache.set(hostId, status);
     statusRefreshedAt.set(hostId, Date.now());
     await bb.storage.kv.set(`${STATUS_KEY_PREFIX}${hostId}`, status);
@@ -675,17 +651,12 @@ export default async function plugin(bb: BbPluginApi) {
     return label;
   }
 
-  async function callDriver(
-    hostId: string,
-    name: string,
-    args: Record<string, unknown>,
-    options: { threadId?: string; signal?: AbortSignal },
-  ): Promise<ToolCallResult> {
+  async function callDriver(hostId: string, name: string, args: Record<string, unknown>, options: CallOptions): Promise<ToolCallResult> {
     const send = (label: string | undefined) =>
       host.call(
         "callTool",
         { name, arguments: args, grants: grants(), ...(label === undefined ? {} : { session: label }) },
-        { hostId, ...(options.signal ? { signal: options.signal } : {}) },
+        hostCallOptions(hostId, options.signal),
       );
     if (options.threadId === undefined) return send(undefined);
     const result = await send(sessionFor(options.threadId, hostId));
@@ -720,7 +691,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function approvalRefusal(
     name: string,
     args: Record<string, unknown>,
-    options: { threadId?: string; signal?: AbortSignal },
+    options: CallOptions,
     action: { key: string; reason: string } | null = sensitiveAction(name, args),
     shownName = agentToolName(name),
   ): Promise<ToolCallResult | null> {
@@ -773,7 +744,7 @@ export default async function plugin(bb: BbPluginApi) {
     hostId: string,
     name: string,
     args: Record<string, unknown>,
-    options: { threadId?: string; signal?: AbortSignal },
+    options: CallOptions,
   ): Promise<ToolCallResult> {
     if (isManaged(name)) {
       return failure(`${name} is managed by the Desktop & Browser Agent plugin: every thread gets its own Cua session automatically.`);
@@ -964,7 +935,7 @@ export default async function plugin(bb: BbPluginApi) {
     hostId: string,
     tool: BrowserTool,
     args: Record<string, unknown>,
-    options: { threadId?: string; signal?: AbortSignal },
+    options: CallOptions,
   ): Promise<ToolCallResult> {
     if (!browserExtension) {
       return failure(
@@ -977,7 +948,7 @@ export default async function plugin(bb: BbPluginApi) {
     const reply = await host.call(
       "browserCall",
       { method: tool.method, params, ...(typeof browser === "string" && browser !== "" ? { browser } : {}) },
-      { hostId, ...(options.signal ? { signal: options.signal } : {}) },
+      hostCallOptions(hostId, options.signal),
     );
     return browserToolResult(tool, reply, SETTINGS_PATH);
   }
@@ -1010,7 +981,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.agents.configure((context) => {
-    const decision = resolveProviderDecision(policy(), context.provider.id);
+    const decision = resolveProviderDecision(routing, context.provider.id);
     if (decision !== "cua") return { tools: [], skills: [] };
     const hostId = context.host.id;
     const status = statusCache.get(hostId) ?? null;
@@ -1078,7 +1049,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function buildState(): Promise<State> {
-    const current = policy();
+    const current = routing;
     const [providers, hosts] = await Promise.all([bb.sdk.providers.list(), bb.sdk.hosts.list()]);
     return {
       mode: current.mode,
@@ -1112,10 +1083,10 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function saveOverride(providerId: string, override: ProviderOverride): Promise<void> {
-    const next = { ...overrides };
+    const next = { ...routing.overrides };
     if (override === "inherit") delete next[providerId];
     else next[providerId] = override;
-    overrides = next;
+    routing = { ...routing, overrides: next };
     await bb.storage.kv.set(OVERRIDES_KEY, next);
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "policy" });
   }
@@ -1134,7 +1105,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function saveMode(next: RoutingMode): Promise<void> {
     await bb.storage.kv.set(MODE_KEY, next);
-    routingMode = next;
+    routing = { ...routing, mode: next };
     bb.realtime.publish(REALTIME_CHANNEL, { reason: "policy" });
   }
 
@@ -1256,265 +1227,34 @@ export default async function plugin(bb: BbPluginApi) {
     return result;
   }
 
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  const USAGE = [
-    "Usage:",
-    "  bb cua status [--host <id>] [--json]          Driver readiness, tested version, and drift",
-    "  bb cua drift [--host <id>] [--json]           Re-read the machine's tools and compare them with the tested driver",
-    "  bb cua tools [--host <id>] [--json]           Every driver tool and how agents reach it",
-    "  bb cua expose <tool> <tool|call|off|default>  Change how agents reach one tool",
-    "  bb cua call <tool> [<json-args>] [--host <id>]",
-    "  bb cua policy [<providerId> <cua|native|off|inherit>] [--json]",
-    "  bb cua mode <prefer-native|cua-everywhere|off>",
-    `  bb cua install --yes [--latest] [--host <id>] Install Cua Driver ${TESTED_DRIVER_VERSION} (or the newest release)`,
-    `  bb cua update --yes [--latest] [--host <id>]  Move to Cua Driver ${TESTED_DRIVER_VERSION} (or the newest release)`,
-    "  bb cua grant [--host <id>]                    Request macOS Accessibility + Screen Recording",
-    "  bb cua browser [status|install|uninstall|on|off] [--host <id>] [--json]  The optional browser extension and its bridge",
-    "  bb cua browser call <tool> [<json-args>] [--host <id>]  Call a browser_* tool (same rules as agents)",
-  ].join("\n");
-
-  bb.cli.register({
-    name: "cua",
-    summary: "Cua Driver computer use: readiness, tool exposure, routing policy, and raw tool calls",
-    commands: [
-      { name: "status", summary: "Show Cua Driver readiness, tested version, and drift for a machine", usage: "bb cua status [--host <id>] [--json]" },
-      { name: "drift", summary: "Compare a machine's driver tools with the version this plugin was tested with", usage: "bb cua drift [--host <id>] [--json]" },
-      { name: "tools", summary: "List every Cua Driver tool and how agents reach it", usage: "bb cua tools [--host <id>] [--json]" },
-      { name: "expose", summary: "Offer a tool as a dedicated tool, through cua_call, or not at all", usage: "bb cua expose <tool> <tool|call|off|default>" },
-      { name: "call", summary: "Call a Cua Driver tool with JSON arguments (same exposure rules as agents)", usage: "bb cua call <tool> [<json-args>] [--host <id>]" },
-      { name: "policy", summary: "Show or set per-provider routing overrides", usage: "bb cua policy [<providerId> <cua|native|off|inherit>] [--json]" },
-      { name: "mode", summary: "Set the routing mode", usage: "bb cua mode <prefer-native|cua-everywhere|off>" },
-      { name: "install", summary: `Install Cua Driver ${TESTED_DRIVER_VERSION} with Cua's official installer (requires --yes)`, usage: "bb cua install --yes [--latest] [--host <id>]" },
-      { name: "update", summary: `Move Cua Driver to ${TESTED_DRIVER_VERSION}, or the newest release with --latest (requires --yes)`, usage: "bb cua update --yes [--latest] [--host <id>]" },
-      { name: "grant", summary: "Request macOS Accessibility and Screen Recording for CuaDriver.app", usage: "bb cua grant [--host <id>]" },
-      {
-        name: "browser",
-        summary: "Set up the optional Browser Bridge for bb extension, or call its browser_* tools",
-        usage: "bb cua browser [status|install|uninstall|on|off|call <tool> [<json-args>]] [--host <id>] [--json]",
-      },
-    ],
-    async run(argv, ctx) {
-      const flags = new Set(["--json", "--yes", "--latest"]);
-      const json = argv.includes("--json");
-      const yes = argv.includes("--yes");
-      const latest = argv.includes("--latest");
-      const hostFlag = argv.indexOf("--host");
-      const explicitHost = hostFlag >= 0 ? argv[hostFlag + 1] : undefined;
-      const args = argv.filter(
-        (arg, index) => !flags.has(arg) && arg !== "--host" && (hostFlag < 0 || index !== hostFlag + 1),
-      );
-      const [command, ...rest] = args;
-      async function targetHost(): Promise<string> {
-        if (explicitHost !== undefined) return explicitHost;
-        if (ctx.threadId !== undefined) return resolveHostId(ctx.threadId);
-        return primaryHostId();
-      }
-      try {
-        if (command === "status") {
-          const hostId = await targetHost();
-          const status = await refreshHost(hostId);
-          const drift = hostCatalogs.get(hostId)?.drift ?? null;
-          return {
-            exitCode: 0,
-            stdout: json
-              ? JSON.stringify({ status, testedVersion: TESTED_DRIVER_VERSION, drift: drift === null ? null : driftView(drift) })
-              : `${statusReport(hostId, status)}\n${JSON.stringify(status, null, 2)}`,
-          };
-        }
-        if (command === "drift") {
-          const hostId = await targetHost();
-          const status = await refreshStatus(hostId, false);
-          if (!status.installed) return { exitCode: 1, stderr: "Cua Driver is not installed on that machine." };
-          const { drift } = await readCatalog(hostId);
-          return { exitCode: 0, stdout: json ? JSON.stringify(driftView(drift)) : formatDrift(drift) };
-        }
-        if (command === "tools") {
-          const hostId = await targetHost();
-          if (!hostCatalogs.has(hostId) || catalogIsStale(hostId)) await readCatalog(hostId).catch(() => null);
-          const known = catalogFor(hostId);
-          const rows = toolViews([known], 90).map((view) => ({
-            name: view.name,
-            exposure: view.exposure,
-            overridden: view.override !== null,
-            unreviewed: view.source === "unreviewed",
-            group: view.group,
-            summary: view.summary,
-          }));
-          if (json) return { exitCode: 0, stdout: JSON.stringify(rows) };
-          const header = known.drift === null
-            ? `Tested catalog (Cua Driver ${TESTED_DRIVER_VERSION}); this machine's own list could not be read.`
-            : `Cua Driver ${known.catalog.driverVersion ?? "(unknown)"} on this machine. * = your override, ? = unreviewed new tool.`;
-          const lines = rows.map(
-            (row) =>
-              `${row.name.padEnd(26)} ${row.exposure.padEnd(4)}${row.overridden ? "*" : row.unreviewed ? "?" : " "} ${row.group.padEnd(9)} ${row.summary}`,
-          );
-          return { exitCode: 0, stdout: [header, "", ...lines].join("\n") };
-        }
-        if (command === "expose") {
-          const [tool, exposure] = rest;
-          if (tool === undefined || exposure === undefined || ![...EXPOSURES, "default"].includes(exposure)) {
-            return { exitCode: 1, stderr: "Usage: bb cua expose <tool> <tool|call|off|default>" };
-          }
-          await saveExposure(tool, exposure as Exposure | "default");
-          const name = driverToolName(tool);
-          const known = toolViews().find((view) => view.name === name);
-          const effective = known?.exposure ?? exposure;
-          return {
-            exitCode: 0,
-            stdout: `${name}: ${effective}${known !== undefined && !known.groupEnabled ? ` (its ${known.group} group is turned off in settings)` : ""}. New agent sessions pick this up.`,
-          };
-        }
-        if (command === "policy") {
-          if (rest.length === 2) {
-            const [providerId, override] = rest;
-            if (!PROVIDER_OVERRIDES.includes(override as ProviderOverride)) {
-              return { exitCode: 1, stderr: `Override must be one of ${PROVIDER_OVERRIDES.join(", ")}.` };
-            }
-            await saveOverride(providerId!, override as ProviderOverride);
-          } else if (rest.length !== 0) {
-            return { exitCode: 1, stderr: USAGE };
-          }
-          const state = await buildState();
-          const lines = state.providers.map(
-            (provider) => `${provider.id.padEnd(16)} ${provider.decision.padEnd(7)} override=${provider.override}${provider.native ? " (native computer use)" : ""}`,
-          );
-          return { exitCode: 0, stdout: json ? JSON.stringify(state) : [`mode: ${state.mode}`, ...lines].join("\n") };
-        }
-        if (command === "mode") {
-          const mode = rest[0];
-          if (!ROUTING_MODES.includes(mode as RoutingMode)) {
-            return { exitCode: 1, stderr: `Mode must be one of ${ROUTING_MODES.join(", ")}.` };
-          }
-          await saveMode(mode as RoutingMode);
-          return { exitCode: 0, stdout: `mode: ${mode}` };
-        }
-        if (command === "call") {
-          const [tool, rawArgs] = rest;
-          if (tool === undefined) return { exitCode: 1, stderr: USAGE };
-          let parsed: Record<string, unknown> = {};
-          if (rawArgs !== undefined) {
-            const value: unknown = JSON.parse(rawArgs);
-            if (typeof value !== "object" || value === null || Array.isArray(value)) {
-              return { exitCode: 1, stderr: "Arguments must be a JSON object." };
-            }
-            parsed = value as Record<string, unknown>;
-          }
-          const forwarded = forwardableArguments(tool, parsed);
-          if (!forwarded.ok) return { exitCode: 1, stderr: forwarded.error };
-          const result = await callConfiguredDriver(
-            await targetHost(),
-            driverToolName(tool),
-            forwarded.value,
-            {
-              ...(ctx.threadId === undefined ? {} : { threadId: ctx.threadId }),
-              ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
-            },
-          );
-          const text = contentText(result);
-          // bb caps CLI output at 1 MiB; a screenshot alone can exceed it.
-          const printable = {
-            ...result,
-            content: result.content.map((part) =>
-              part.type === "image" ? { type: "image", mimeType: part.mimeType, base64Chars: part.data.length } : part,
-            ),
-          };
-          return { exitCode: result.isError ? 1 : 0, stdout: json ? JSON.stringify(printable) : text };
-        }
-        if (command === "install" || command === "update") {
-          const hostId = await targetHost();
-          const target = latest ? null : TESTED_DRIVER_VERSION;
-          const targetLabel = target === null ? "the newest Cua Driver release (untested with this plugin)" : `Cua Driver ${target}`;
-          if (command === "update") {
-            const status = await refreshStatus(hostId, true);
-            if (!status.installed) return { exitCode: 1, stderr: "Cua Driver is not installed on that machine; run `bb cua install --yes` first." };
-            if (target !== null && status.version === target) {
-              return { exitCode: 0, stdout: `Cua Driver ${target} is already installed (the version this plugin was tested with).` };
-            }
-            if (target === null && status.updateAvailable === false) {
-              return { exitCode: 0, stdout: `Cua Driver ${status.version ?? ""} is already the newest release.` };
-            }
-          }
-          if (!yes) {
-            return {
-              exitCode: 1,
-              stderr: [
-                `This stops any running Cua Driver and runs Cua's official installer for ${targetLabel} on the target machine${target === null ? " (Cua's unpinned script)" : ", after checking its files against the checksums recorded in this plugin"}.`,
-                target === null ? "" : "Pass --latest for the newest release instead.",
-                "Re-run with --yes to confirm.",
-              ].filter(Boolean).join(" "),
-            };
-          }
-          let state = await startInstall(hostId, target);
-          const deadline = Date.now() + 15 * 60_000;
-          while (state.running && Date.now() < deadline) {
-            await sleep(2_000);
-            state = await readInstallState(hostId);
-          }
-          if (!state.running) await refreshHost(hostId).catch(() => null);
-          const summary = state.running
-            ? "Installer still running after 15 minutes; check `bb cua status` later."
-            : state.ok
-              ? "Install finished."
-              : "Install failed.";
-          return {
-            exitCode: state.ok === true ? 0 : 1,
-            stdout: json ? JSON.stringify(state) : [summary, ...state.tail].join("\n"),
-          };
-        }
-        if (command === "browser") {
-          const [action = "status", tool, rawArgs] = rest;
-          if (action === "call") {
-            const browserTool = BROWSER_TOOLS.find((entry) => entry.name === tool || entry.method === tool);
-            if (browserTool === undefined) {
-              return { exitCode: 1, stderr: `Unknown browser tool. One of: ${BROWSER_TOOL_NAMES.join(", ")}.` };
-            }
-            const value: unknown = rawArgs === undefined ? {} : JSON.parse(rawArgs);
-            const parsed = browserTool.parameters.safeParse(value);
-            if (!parsed.success) return { exitCode: 1, stderr: `Invalid arguments: ${parsed.error.message}` };
-            const result = await callBrowserTool(await targetHost(), browserTool, parsed.data as Record<string, unknown>, {
-              ...(ctx.threadId === undefined ? {} : { threadId: ctx.threadId }),
-              ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
-            });
-            return { exitCode: result.isError ? 1 : 0, stdout: contentText(result) };
-          }
-          if (action === "on" || action === "off") {
-            await saveBrowserExtension(action === "on");
-            return { exitCode: 0, stdout: `Browser extension tools: ${action}. New agent sessions pick this up.` };
-          }
-          if (action !== "status" && action !== "install" && action !== "uninstall") return { exitCode: 1, stderr: USAGE };
-          const hostId = await targetHost();
-          const bridge = action === "status" ? await bridgeOn(hostId, "status") : await setupBridge(hostId, action);
-          const dir = await extensionDir();
-          if (json) {
-            return {
-              exitCode: 0,
-              stdout: JSON.stringify({ enabled: browserExtension, extensionId: UNPACKED_EXTENSION_ID, extensionDir: dir, bridge }),
-            };
-          }
-          const lines = [
-            `Browser extension tools: ${browserExtension ? "on" : "off"}`,
-            `Bridge: ${!bridge.supported ? "not supported on this platform" : bridge.installed ? "installed" : "not installed"}`,
-            ...bridge.browsers
-              .filter((entry) => entry.detected)
-              .map((entry) => `  ${entry.name}: ${entry.registered ? "registered" : "not registered"}`),
-            `Connected: ${bridge.connections.length === 0 ? "none" : bridge.connections.map((entry) => `${entry.browser} ${entry.version} (extension ${entry.extension})`).join(", ")}`,
-            `Chrome Web Store: ${EXTENSION_STORE_URL}\nExtension id: ${UNPACKED_EXTENSION_ID}${dir === null ? "" : `\nUnpacked extension: ${dir}`}`,
-          ];
-          return { exitCode: 0, stdout: lines.join("\n") };
-        }
-        if (command === "grant") {
-          const result = await grantPermissions(await targetHost());
-          return { exitCode: result.ok ? 0 : 1, stdout: json ? JSON.stringify(result) : result.output };
-        }
-        return { exitCode: command === undefined || command === "help" ? 0 : 1, stdout: USAGE };
-      } catch (error) {
-        return { exitCode: 1, stderr: errorMessage(error) };
-      }
-    },
-  });
+  bb.cli.register(
+    cuaCli({
+      readCatalog,
+      hasCatalog: (hostId) => hostCatalogs.has(hostId),
+      catalogIsStale,
+      catalogFor,
+      toolViews,
+      statusReport,
+      refreshStatus,
+      refreshHost,
+      resolveHostId,
+      primaryHostId,
+      buildState,
+      saveOverride,
+      saveMode,
+      saveExposure,
+      saveBrowserExtension,
+      browserExtensionOn: () => browserExtension,
+      extensionDir,
+      bridgeOn,
+      setupBridge,
+      callConfiguredDriver,
+      callBrowserTool,
+      startInstall,
+      readInstallState,
+      grantPermissions,
+    }),
+  );
 
   function endSession(threadId: string): void {
     const active = activeSessions.get(threadId);
