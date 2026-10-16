@@ -53,9 +53,22 @@ manual installs, see the [reference](docs/REFERENCE.md#requirements).
 | Your signed-in profile | only with **Signed-in browser profiles** on | always |
 | Default | on | off |
 
-Both work in the background. With the extension on, agents prefer it for web
-pages; the window tools remain for Electron apps and browsers without the
-extension.
+Both work in the background, but for web pages the extension is the better
+choice:
+
+- **Your real browser, no extra grants.** Agents use the browser you are
+  signed in to. The window tools need **Signed-in browser profiles** turned on
+  and Cua Driver restarted with that grant.
+- **Never takes over your screen.** The window tools bring the browser to the
+  front once per connection, and a connection lasts at most 30 minutes idle
+  or 8 hours. The extension stays in the background.
+- **Any tab, not one window.** Agents can read and act in tabs that are not
+  showing.
+- **You can see and stop it.** Tabs agents open go into a purple **Agent**
+  group, and **Pause agents** in the toolbar stops them at once.
+
+With the extension on, agents use it for web pages. The window tools remain
+for Electron apps and for browsers without the extension.
 
 ## Browser extension (optional)
 

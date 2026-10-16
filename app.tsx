@@ -1194,7 +1194,7 @@ export default definePluginApp((app) => {
     id: "browser-extension",
     title: "Browser extension",
     description:
-      "Optional. Agents work in any tab of your everyday browser through the Browser Bridge for bb extension. Without it they still have Cua Driver's browser window tools.",
+      "Optional, recommended for web pages. Agents work in any tab of your signed-in browser without extra grants or bringing it to the front, and you can pause them from the toolbar. Without it they use Cua Driver's browser window tools.",
     component: BrowserExtensionSettings,
   });
   app.slots.settingsSection({
