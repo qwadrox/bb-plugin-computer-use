@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-10-16
+
+- **The plugin icon shows up.** bb draws plugin icons as a mask in the theme
+  colour, so the 0.4.0 icon (a filled purple square) appeared as a blank
+  tile. It is now a single-colour glyph.
+
 ## 0.4.0 - 2026-10-16
 
 - **New name and icon: Desktop & Browser Agent.** The plugin is listed in
