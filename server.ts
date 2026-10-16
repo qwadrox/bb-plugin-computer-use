@@ -947,7 +947,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
   const BROWSER_ACTION = {
     key: "browser_extension",
-    reason: "work in the tabs you share in your own signed-in browser, through the Agent Browser Bridge extension",
+    reason: "work in the tabs of your own signed-in browser, through the Agent Browser Bridge extension",
   };
 
   /** One browser_* call: the setting, the approval, then the extension on the thread's machine. */

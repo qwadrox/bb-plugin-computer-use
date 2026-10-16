@@ -20,13 +20,12 @@
       <button id="reconnect" type="button">Reconnect</button>
     </div>
     <div id="paused" class="paused" hidden>
-      <p>Agents are paused because the debugging bar was cancelled.</p>
+      <p>Agents are paused. Closing the debugging bar pauses them too.</p>
       <button id="resume" type="button">Resume agents</button>
     </div>
     <section>
-      <p class="help">Agents work in tabs in the purple <strong>Agent</strong> group, and in tabs they open themselves.</p>
-      <button id="share" type="button" hidden></button>
-      <label class="toggle"><input id="scope-all" type="checkbox" /> Let agents use any tab</label>
+      <p class="help">Agents can use any tab. Tabs they open go into the purple <strong>Agent</strong> group.</p>
+      <button id="pause" type="button">Pause agents</button>
     </section>
     <script type="module" src="popup.js"></script>
   </body>

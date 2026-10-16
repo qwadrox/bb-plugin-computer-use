@@ -3,16 +3,16 @@
 ## Unreleased
 
 - **Optional browser extension.** Agent Browser Bridge
-  (`browser-extension/`, Chromium MV3) lets agents work in the tabs you share
+  (`browser-extension/`, Chromium MV3) lets agents work in the tabs of your own browser
   in Brave, Chrome, Edge or Chromium, in background tabs, through the
   browser's debugger API, so Brave no longer needs Cua Driver's
   remote-debugging attach. Off by default: turn it on in the new **Browser
   extension** card (or `bb cua browser on`), install the native messaging
   bridge there (`bb cua browser install`), and load the unpacked extension.
   Adds the `browser_*` tools (tabs, open, read, click, type, select, key,
-  scroll, navigate, screenshot, close); tabs are shared through an **Agent**
-  tab group or the toolbar button, and closing the debugging bar pauses
-  agents. With **Ask before sensitive actions** on, the first call in a
+  scroll, navigate, screenshot, close). Agents may use any tab; tabs they
+  open go into a purple **Agent** group. The toolbar popup pauses agents,
+  and so does closing the debugging bar. With **Ask before sensitive actions** on, the first call in a
   thread asks.
 
 - **Ask before sensitive actions** (setting, off by default). When on, reading

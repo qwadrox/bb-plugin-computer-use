@@ -23,7 +23,7 @@ Inc. or the bb team. See [NOTICE.md](NOTICE.md) for attribution.
 | Pinned installs | Install and update target the tested driver by default. The plugin downloads that release's installer files from GitHub and runs them only if each matches a checksum recorded in this repo. The newest release is a separate, explicitly untested choice. |
 | Agent skill | `cua-computer-use`: the upstream Cua Driver 0.36 loop (narrow reads, `run_steps` with `observe`, verify at checkpoints) plus bb rules: what to do when a tool is off, and when to stop and ask before sending or deleting. |
 | Settings UI | Routing mode, per-provider overrides, an **Agent tools** card with per-tool exposure, and a setup checklist per machine with install, permission and drift state. |
-| Browser extension (optional) | **Agent Browser Bridge**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs you share in your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
+| Browser extension (optional) | **Agent Browser Bridge**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs of your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
 | CLI | `bb cua status`, `drift`, `tools`, `expose`, `call`, `policy`, `mode`, `install`, `update`, `grant`, `browser`. |
 | Multi-machine | Tool calls run on the host that owns the thread's environment through bb's host RPC, so remote enrolled machines work the same as the local one. |
 
@@ -125,7 +125,7 @@ profile with remote debugging, which it automates only for Chrome, Chromium
 and Edge. The optional **Agent Browser Bridge** extension
 ([browser-extension/](browser-extension/)) works in any Chromium browser,
 Brave included, the way browser agents usually do: the extension uses the
-browser's debugger API on the tabs you share, so agents click and type in
+browser's debugger API on its tabs, so agents click and type in
 background tabs while you use other tabs. The browser shows its "started
 debugging this browser" bar while an agent is attached; closing that bar
 pauses agents until you resume them from the extension.
@@ -143,16 +143,16 @@ Nothing changes until you turn it on:
    (or `chrome://extensions`), turn on Developer mode, **Load unpacked**, and
    pick `browser-extension/dist`. The card shows the full path. A Chrome Web
    Store listing may follow.
-3. Share tabs: put them in a tab group named **Agent**, or use the extension's
-   toolbar button (**Share this tab**). Tabs agents open with `browser_open`
-   join that group. The toolbar popup can also let agents use any tab.
+3. That's it: agents can use any tab. Tabs they open with `browser_open` go
+   into a purple **Agent** tab group. **Pause agents** in the extension's
+   toolbar popup stops them until you resume.
 
 Tools: `browser_tabs`, `browser_open`, `browser_read` (a text outline with
 `[eN]` refs), `browser_click`, `browser_type`, `browser_select`,
 `browser_key`, `browser_scroll`, `browser_navigate`, `browser_screenshot`,
 `browser_close`. They obey routing like the `cua_*` tools, and with **Ask
 before sensitive actions** on, the first one in a thread asks you. Agents
-cannot reach tabs you did not share, `chrome://` pages, or other extensions.
+cannot reach `chrome://` pages or other extensions.
 The bridge accepts connections only from this user (socket mode 0600) and
 only from the extension's id.
 

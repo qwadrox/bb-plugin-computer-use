@@ -1007,7 +1007,7 @@ export function BrowserExtensionSettings() {
         />
         <span className="text-sm font-medium">Offer browser_* tools</span>
         <Hint label="browser tools">
-          Agents work in the tabs you share in your everyday browser (the Agent tab group), in the background, while you use other tabs. The browser shows a debugging bar while an agent is attached. Optional: nothing changes until you turn it on.
+          Agents work in the tabs of your everyday browser, in the background, while you use other tabs. Tabs they open go into a purple Agent group. The browser shows a debugging bar while an agent is attached. Optional: nothing changes until you turn it on.
         </Hint>
         <span className="ml-auto text-xs text-muted-foreground">
           {connected.length > 0 ? `Connected: ${connected.map((entry) => entry.browser).join(", ")}` : "No browser connected"}
@@ -1066,7 +1066,7 @@ export function BrowserExtensionSettings() {
               )}
             </li>
             <li>
-              Share tabs: put them in a tab group named <strong className="font-medium text-foreground">Agent</strong>, or use the extension's toolbar button. Tabs agents open join that group. Close the debugging bar to pause agents.
+              Agents can use any tab. Tabs they open go into a purple <strong className="font-medium text-foreground">Agent</strong> group. Pause them from the extension's toolbar button, or by closing the debugging bar.
             </li>
           </ol>
           <p>
@@ -1188,7 +1188,7 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "browser-extension",
     title: "Browser extension",
-    description: "Optional. Lets agents work in tabs you share in your own browser, in the background.",
+    description: "Optional. Lets agents work in the tabs of your own browser, in the background.",
     component: BrowserExtensionSettings,
   });
   app.slots.settingsSection({

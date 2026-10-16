@@ -106,14 +106,12 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
 
   it("reports the browser and its settings", async () => {
     const status = await call("status");
-    expect(status.scope).toBe("shared");
     expect(status.paused).toBe(false);
   });
 
   it("opens a tab in the agent group and reads it", async () => {
     const opened = await call("open", { url: `${base}/form` });
     tabId = opened.tab_id as number;
-    expect(opened.shared).toBe(true);
     const page = await call("read", { tab_id: tabId });
     expect(page.text).toContain("# Expenses");
     expect(page.text).toMatch(/\[e\d+\] textbox "Name"/);
@@ -150,7 +148,7 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
     else expect(reply.code).toBe("not_rendered");
   });
 
-  it("refuses tabs that are not shared and closes its own", async () => {
+  it("refuses closed tabs and closes its own", async () => {
     await expect(call("read", { tab_id: 999_999 })).rejects.toThrow(/tab_closed/);
     await call("close", { tab_id: tabId });
     await expect(call("read", { tab_id: tabId })).rejects.toThrow(/tab_closed/);

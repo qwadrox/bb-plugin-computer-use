@@ -82,7 +82,7 @@ export function nativeManifest(layout: BridgeLayout): string {
   return `${JSON.stringify(
     {
       name: NATIVE_HOST_NAME,
-      description: "Agent Browser Bridge: lets bb agents use the tabs you share with them.",
+      description: "Agent Browser Bridge: lets bb agents work in your browser tabs.",
       path: layout.launcher,
       type: "stdio",
       allowed_origins: EXTENSION_IDS.map((id) => `chrome-extension://${id}/`),

@@ -82,11 +82,11 @@ Bridge extension. Prefer them for web pages in the user's own browser: they
 work in background tabs while the user keeps using the browser, and need no
 window, pid or foreground attach.
 
-- `browser_tabs` lists the tabs the user shares (the **Agent** tab group, or
-  every tab if they allowed it); `browser_open {url}` opens a background tab
-  in that group. Other tabs are off limits: if the page you need is not
-  shared, ask the user to share it (drag it into the Agent group or use the
-  extension's toolbar button) instead of reaching it another way.
+- `browser_tabs` lists the open tabs; `browser_open {url}` opens a
+  background tab in the purple **Agent** group. Use a tab the user already
+  has open when the task is about that page (an open mail, a form they
+  started); otherwise work in a tab you opened, and do not navigate away
+  from a page the user is using.
 - `browser_read {tab_id}` returns a text outline with `[eN]` refs; pass
   `query` to keep matching lines only, and the offset it names for more.
   `browser_click`, `browser_type`, `browser_select`, `browser_key` and

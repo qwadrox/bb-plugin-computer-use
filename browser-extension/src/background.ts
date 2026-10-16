@@ -12,7 +12,6 @@ import {
   type SnapshotResult,
 } from "./page.js";
 import {
-  DEFAULT_SETTINGS,
   GROUP_TITLE,
   NATIVE_HOST,
   type BridgeStatus,
@@ -27,7 +26,6 @@ const SCREENSHOT_TIMEOUT_MS = 6_000;
 const LOAD_TIMEOUT_MS = 20_000;
 const IDLE_DETACH_MS = 60_000;
 const RECONNECT_ALARM = "reconnect";
-const SHARED_KEY = "sharedTabs";
 
 class BridgeError extends Error {
   constructor(
@@ -41,11 +39,8 @@ class BridgeError extends Error {
 // ---------------------------------------------------------------- settings
 
 async function readSettings(): Promise<StoredSettings> {
-  const stored = await chrome.storage.local.get(["scope", "paused"]);
-  return {
-    scope: stored.scope === "all" ? "all" : DEFAULT_SETTINGS.scope,
-    paused: stored.paused === true,
-  };
+  const stored = await chrome.storage.local.get("paused");
+  return { paused: stored.paused === true };
 }
 
 function browserName(): string {
@@ -123,58 +118,19 @@ async function handleHostMessage(message: unknown): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------- sharing
+// ---------------------------------------------------------------- tabs
 
-const hasGroups = typeof chrome.tabGroups !== "undefined";
-
-async function sharedTabIds(): Promise<Set<number>> {
-  const stored = await chrome.storage.session.get(SHARED_KEY);
-  return new Set(Array.isArray(stored[SHARED_KEY]) ? (stored[SHARED_KEY] as number[]) : []);
-}
-
-async function writeShared(ids: Set<number>): Promise<void> {
-  await chrome.storage.session.set({ [SHARED_KEY]: [...ids] });
-}
-
-async function agentGroupIds(): Promise<Set<number>> {
-  if (!hasGroups) return new Set();
-  const groups = await chrome.tabGroups.query({ title: GROUP_TITLE });
-  return new Set(groups.map((group) => group.id));
-}
-
-async function isShared(tab: chrome.tabs.Tab): Promise<boolean> {
-  if (tab.id === undefined) return false;
-  if (hasGroups) return tab.groupId !== -1 && (await agentGroupIds()).has(tab.groupId);
-  return (await sharedTabIds()).has(tab.id);
-}
-
-async function share(tabId: number): Promise<void> {
-  if (hasGroups) {
-    const tab = await chrome.tabs.get(tabId);
-    const [existing] = await chrome.tabGroups.query({ title: GROUP_TITLE, windowId: tab.windowId });
-    if (existing !== undefined) {
-      await chrome.tabs.group({ tabIds: [tabId], groupId: existing.id });
-    } else {
-      const groupId = await chrome.tabs.group({ tabIds: [tabId], createProperties: { windowId: tab.windowId } });
-      await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "purple" });
-    }
+/** Puts a tab an agent opened into the purple Agent group of its window. */
+async function groupAgentTab(tabId: number): Promise<void> {
+  if (typeof chrome.tabGroups === "undefined") return;
+  const tab = await chrome.tabs.get(tabId);
+  const [existing] = await chrome.tabGroups.query({ title: GROUP_TITLE, windowId: tab.windowId });
+  if (existing !== undefined) {
+    await chrome.tabs.group({ tabIds: [tabId], groupId: existing.id });
     return;
   }
-  const ids = await sharedTabIds();
-  ids.add(tabId);
-  await writeShared(ids);
-}
-
-async function unshare(tabId: number): Promise<void> {
-  if (hasGroups) {
-    const tab = await chrome.tabs.get(tabId);
-    if (await isShared(tab)) await chrome.tabs.ungroup(tabId);
-  } else {
-    const ids = await sharedTabIds();
-    ids.delete(tabId);
-    await writeShared(ids);
-  }
-  if (attached.has(tabId)) await chrome.debugger.detach({ tabId }).catch(() => undefined);
+  const groupId = await chrome.tabs.group({ tabIds: [tabId], createProperties: { windowId: tab.windowId } });
+  await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "purple" });
 }
 
 async function allowedTab(tabId: unknown): Promise<chrome.tabs.Tab> {
@@ -187,18 +143,12 @@ async function allowedTab(tabId: unknown): Promise<chrome.tabs.Tab> {
   }
   if (typeof tabId !== "number") throw new BridgeError("invalid_arguments", "tab_id must be a number from browser_tabs or browser_open.");
   const tab = await chrome.tabs.get(tabId).catch(() => null);
-  if (tab === null) throw new BridgeError("tab_closed", `Tab ${tabId} is closed. browser_tabs lists the tabs you may use.`);
-  if (settings.scope !== "all" && !(await isShared(tab))) {
-    throw new BridgeError(
-      "tab_not_shared",
-      `Tab ${tabId} is not shared with agents. Open your own tab with browser_open, or ask the user to share this one (extension button → Share this tab, or drag it into the "${GROUP_TITLE}" tab group).`,
-    );
-  }
+  if (tab === null) throw new BridgeError("tab_closed", `Tab ${tabId} is closed. browser_tabs lists the open tabs.`);
   return tab;
 }
 
-function tabSummary(tab: chrome.tabs.Tab, shared: boolean) {
-  return { tab_id: tab.id, title: tab.title ?? "", url: tab.url ?? "", active: tab.active, window_id: tab.windowId, shared };
+function tabSummary(tab: chrome.tabs.Tab) {
+  return { tab_id: tab.id, title: tab.title ?? "", url: tab.url ?? "", active: tab.active, window_id: tab.windowId };
 }
 
 // ---------------------------------------------------------------- debugger
@@ -406,14 +356,7 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
     case "tabs": {
       const settings = await readSettings();
       const tabs = await chrome.tabs.query({ windowType: "normal" });
-      const visible = [];
-      let hidden = 0;
-      for (const tab of tabs) {
-        const shared = await isShared(tab);
-        if (settings.scope === "all" || shared) visible.push(tabSummary(tab, shared));
-        else hidden += 1;
-      }
-      return { scope: settings.scope, paused: settings.paused, tabs: visible, not_shared: hidden };
+      return { paused: settings.paused, tabs: tabs.map(tabSummary) };
     }
     case "open": {
       const settings = await readSettings();
@@ -422,10 +365,9 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
       const window = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
       const tab = await chrome.tabs.create({ url, active: false, ...(window?.id !== undefined ? { windowId: window.id } : {}) });
       if (tab.id === undefined) throw new BridgeError("failed", "The browser did not create a tab.");
-      await share(tab.id);
+      await groupAgentTab(tab.id).catch(() => undefined);
       await waitForLoad(tab.id);
-      const loaded = await chrome.tabs.get(tab.id);
-      return tabSummary(loaded, true);
+      return tabSummary(await chrome.tabs.get(tab.id));
     }
     case "read": {
       const tab = await allowedTab(params.tab_id);
@@ -572,14 +514,12 @@ async function dispatch(method: string, params: Record<string, unknown>): Promis
 chrome.runtime.onMessage.addListener((message: PopupRequest, _sender, reply) => {
   void (async () => {
     switch (message.type) {
-      case "share":
-        await share(message.tabId);
-        break;
-      case "unshare":
-        await unshare(message.tabId);
-        break;
-      case "scope":
-        await chrome.storage.local.set({ scope: message.scope });
+      case "pause":
+        await chrome.storage.local.set({ paused: true });
+        for (const tabId of [...attached.keys()]) {
+          attached.delete(tabId);
+          await chrome.debugger.detach({ tabId }).catch(() => undefined);
+        }
         break;
       case "resume":
         await chrome.storage.local.set({ paused: false });
@@ -592,14 +532,11 @@ chrome.runtime.onMessage.addListener((message: PopupRequest, _sender, reply) => 
       case "status":
         break;
     }
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     const status: BridgeStatus = {
       connected: port !== null && lastError === null,
       error: lastError,
       browser: browserName(),
       settings: await readSettings(),
-      activeTab:
-        active?.id !== undefined ? { id: active.id, title: active.title ?? "", shared: await isShared(active) } : null,
     };
     reply(status);
   })();

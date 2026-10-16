@@ -1,7 +1,7 @@
 # Agent Browser Bridge
 
 An optional Chromium extension (Manifest V3) for the Computer Use bb plugin.
-It lets coding agents in bb work in the browser tabs you share with them, in
+It lets coding agents in bb work in your browser tabs, in
 the background, while you keep using the browser. Works in Brave, Chrome, Edge
 and Chromium on macOS and Linux.
 
@@ -18,9 +18,9 @@ agent ─▶ bb plugin server ─▶ host worker ─▶ Unix socket ─▶ bridg
   it with each Chromium browser found on the machine. The browser starts it
   when the extension connects; it listens on a socket only this user can open
   and relays requests to the extension.
-- Agents may use tabs in the tab group named **Agent**, tabs they opened with
-  `browser_open` (which join that group), and tabs shared with the toolbar
-  button. The popup can widen this to every tab.
+- Agents may use any tab. Tabs they open with `browser_open` go into a
+  purple tab group named **Agent**. **Pause agents** in the toolbar popup
+  stops them until you resume.
 - Pages are read in an isolated world as a text outline with `[eN]` refs.
   Clicks, typing and keys go through `chrome.debugger` as trusted input, so
   they work in background tabs. While attached, the browser shows its
@@ -51,8 +51,8 @@ to end in a throwaway headless Chromium profile.
 | --- | --- |
 | `debugger` | Trusted clicks, typing and keys, and screenshots, in background tabs |
 | `nativeMessaging` | Talk to the bridge that bb installs on the same machine |
-| `tabs`, `tabGroups` | List and open tabs, and tell shared tabs (the Agent group) from the rest |
-| `storage` | Remember the sharing scope and the paused state |
+| `tabs`, `tabGroups` | List and open tabs, and group the tabs agents open |
+| `storage` | Remember whether agents are paused |
 | `alarms` | Reconnect to the bridge after bb or the browser restarts |
 
 No page content leaves the machine except to the bb agent that asked for it.

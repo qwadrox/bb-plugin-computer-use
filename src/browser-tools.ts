@@ -26,15 +26,15 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     name: "browser_tabs",
     method: "tabs",
     description:
-      "List the tabs the user shares with agents in their own browser (the Agent tab group, tabs agents opened, or every tab when the user allows it), with tab ids, titles and URLs. Tabs that are not shared are only counted.",
+      "List the open tabs of the user's own browser with tab ids, titles and URLs, and whether agents are paused.",
     parameters: z.object({ browser }),
-    labels: { pending: "Listing shared tabs", completed: "Listed shared tabs" },
+    labels: { pending: "Listing browser tabs", completed: "Listed browser tabs" },
   },
   {
     name: "browser_open",
     method: "open",
     description:
-      "Open a URL in a new background tab of the user's browser, in its Agent tab group. The user's own tab stays in front; the new tab is shared with agents. Returns its tab_id.",
+      "Open a URL in a new background tab of the user's browser, in its purple Agent tab group. The user's own tab stays in front. Returns its tab_id.",
     parameters: z.object({ url: z.string().min(1).describe("http(s) URL, or about:blank"), browser }),
     labels: { pending: "Opening a tab", completed: "Opened a tab" },
   },
@@ -42,7 +42,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     name: "browser_read",
     method: "read",
     description:
-      "Read a shared tab as a text outline: headings, text, and interactive elements as `[eN] role \"name\"` lines whose refs the other browser_* tools take. Refs expire when the page changes; read again after navigation. Use query to keep only matching lines, and offset for the next page of a long outline.",
+      "Read a tab as a text outline: headings, text, and interactive elements as `[eN] role \"name\"` lines whose refs the other browser_* tools take. Refs expire when the page changes; read again after navigation. Use query to keep only matching lines, and offset for the next page of a long outline.",
     parameters: z.object({
       tab_id: tabId,
       query: z.string().optional().describe("Only lines containing this text (case-insensitive)"),
@@ -55,7 +55,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
   {
     name: "browser_click",
     method: "click",
-    description: "Click an element of a shared tab by ref. Works while the tab is in the background; returns the page's URL and title afterwards.",
+    description: "Click an element of a tab by ref. Works while the tab is in the background; returns the page's URL and title afterwards.",
     parameters: z.object({ tab_id: tabId, ref, browser }),
     labels: { pending: "Clicking in the browser", completed: "Clicked in the browser" },
   },
@@ -63,7 +63,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     name: "browser_type",
     method: "type",
     description:
-      "Type text into a text field of a shared tab by ref. replace clears the field first; submit presses Enter afterwards. Password values are never echoed back.",
+      "Type text into a text field of a tab by ref. replace clears the field first; submit presses Enter afterwards. Password values are never echoed back.",
     parameters: z.object({
       tab_id: tabId,
       ref,
@@ -77,14 +77,14 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
   {
     name: "browser_select",
     method: "select",
-    description: "Choose an option of a <select> in a shared tab by ref, matching the option's label or value.",
+    description: "Choose an option of a <select> in a tab by ref, matching the option's label or value.",
     parameters: z.object({ tab_id: tabId, ref, option: z.string().min(1), browser }),
     labels: { pending: "Choosing an option", completed: "Chose an option" },
   },
   {
     name: "browser_key",
     method: "key",
-    description: "Press a key or combination in a shared tab, such as Enter, Escape, Tab, ArrowDown, or Meta+A.",
+    description: "Press a key or combination in a tab, such as Enter, Escape, Tab, ArrowDown, or Meta+A.",
     parameters: z.object({ tab_id: tabId, key: z.string().min(1), browser }),
     labels: { pending: "Pressing a key", completed: "Pressed a key" },
   },
@@ -92,7 +92,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     name: "browser_scroll",
     method: "scroll",
     description:
-      "Scroll a shared tab up or down by a share of the viewport (amount, default 0.8), or scroll an element into view by ref.",
+      "Scroll a tab up or down by a share of the viewport (amount, default 0.8), or scroll an element into view by ref.",
     parameters: z.object({
       tab_id: tabId,
       direction: z.enum(["up", "down"]).optional(),
@@ -105,7 +105,7 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
   {
     name: "browser_navigate",
     method: "navigate",
-    description: "Load a URL in a shared tab, or pass back, forward, or reload.",
+    description: "Load a URL in a tab, or pass back, forward, or reload.",
     parameters: z.object({
       tab_id: tabId,
       url: z.string().min(1).describe("http(s) URL, about:blank, back, forward, or reload"),
@@ -117,14 +117,14 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     name: "browser_screenshot",
     method: "screenshot",
     description:
-      "Take a JPEG of a shared tab's viewport. A tab in the background may not be drawn; then read it with browser_read instead.",
+      "Take a JPEG of a tab's viewport. A tab in the background may not be drawn; then read it with browser_read instead.",
     parameters: z.object({ tab_id: tabId, browser }),
     labels: { pending: "Taking a screenshot", completed: "Took a screenshot" },
   },
   {
     name: "browser_close",
     method: "close",
-    description: "Close a shared tab, for example one this agent opened and no longer needs.",
+    description: "Close a tab, for example one this agent opened and no longer needs.",
     parameters: z.object({ tab_id: tabId, browser }),
     labels: { pending: "Closing a tab", completed: "Closed a tab" },
   },
