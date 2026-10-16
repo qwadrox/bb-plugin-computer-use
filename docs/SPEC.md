@@ -107,7 +107,7 @@ JSON text, `structuredContent` → `structuredContent:\n<json>` text capped at
 200 KB, empty → `(empty result)`. MCP `isError` maps to bb `isError`.
 
 Browser extension tools (`browser_*`, optional) are not driver tools. Each
-maps to one method of the Agent Browser Bridge extension and runs through the
+maps to one method of the Browser Bridge for bb extension and runs through the
 host method `browserCall`: the host worker finds the browsers connected to
 its bridge (one Unix socket per browser, `<pid>.sock`, mode 0600), asks the
 one named by `browser` or the only one, and returns `{ok, browser, result}` or

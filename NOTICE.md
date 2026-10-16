@@ -18,12 +18,13 @@ Cua AI, Inc.
   verify-then-escalate ladder, and the pitfalls list are condensed from that
   source and adjusted to bb's tool names.
 
-## Agent Browser Bridge
+## Browser Bridge for bb
 
 The optional browser extension in `browser-extension/` and its icon
 (`browser-extension/static/icons/`) are original work of this project, under
-the same MIT license. They use no bb or Cua names, logos or artwork; the
-extension's description says it is not affiliated with either.
+the same MIT license. The name uses "bb" only to say which app the extension
+works with ("for bb"); it uses no bb or Cua logos or artwork, and its
+description says it is unofficial and not affiliated with either.
 
 The plugin never bundles Cua Driver binaries. Users install Cua Driver
 separately from <https://cua.ai/docs/how-to-guides/driver/install>.

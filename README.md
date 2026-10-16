@@ -23,7 +23,7 @@ Inc. or the bb team. See [NOTICE.md](NOTICE.md) for attribution.
 | Pinned installs | Install and update target the tested driver by default. The plugin downloads that release's installer files from GitHub and runs them only if each matches a checksum recorded in this repo. The newest release is a separate, explicitly untested choice. |
 | Agent skill | `cua-computer-use`: the upstream Cua Driver 0.36 loop (narrow reads, `run_steps` with `observe`, verify at checkpoints) plus bb rules: what to do when a tool is off, and when to stop and ask before sending or deleting. |
 | Settings UI | Routing mode, per-provider overrides, an **Agent tools** card with per-tool exposure, and a setup checklist per machine with install, permission and drift state. |
-| Browser extension (optional) | **Agent Browser Bridge**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs of your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
+| Browser extension (optional) | **Browser Bridge for bb**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs of your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
 | CLI | `bb cua status`, `drift`, `tools`, `expose`, `call`, `policy`, `mode`, `install`, `update`, `grant`, `browser`. |
 | Multi-machine | Tool calls run on the host that owns the thread's environment through bb's host RPC, so remote enrolled machines work the same as the local one. |
 
@@ -122,7 +122,7 @@ started the service that way. On Linux and Windows, start
 
 Cua Driver drives a browser through its window, or attaches to a signed-in
 profile with remote debugging, which it automates only for Chrome, Chromium
-and Edge. The optional **Agent Browser Bridge** extension
+and Edge. The optional **Browser Bridge for bb** extension
 ([browser-extension/](browser-extension/)) works in any Chromium browser,
 Brave included, the way browser agents usually do: the extension uses the
 browser's debugger API on its tabs, so agents click and type in
@@ -346,7 +346,7 @@ src/contract.ts          server ⇄ host RPC contract
 src/browser-tools.ts     browser_* agent tools of the optional extension
 src/browser-host.ts      extension bridge on the machine: install, sockets, calls
 src/browser-bridge-script.ts  the native messaging host the browser starts
-browser-extension/       Agent Browser Bridge (Chromium MV3 extension, npm workspace)
+browser-extension/       Browser Bridge for bb (Chromium MV3 extension, npm workspace)
 src/mcp-client.ts        minimal MCP stdio JSON-RPC client
 scripts/                 sync-driver-tools.mjs
 skills/                  agent skill injected when Cua tools are active

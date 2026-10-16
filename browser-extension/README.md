@@ -1,11 +1,13 @@
-# Agent Browser Bridge
+# Browser Bridge for bb
 
 An optional Chromium extension (Manifest V3) for the Computer Use bb plugin.
 It lets coding agents in bb work in your browser tabs, in
 the background, while you keep using the browser. Works in Brave, Chrome, Edge
 and Chromium on macOS and Linux.
 
-Not affiliated with bb or Cua AI. The name and icon are this project's own.
+An unofficial community extension, not affiliated with or endorsed by bb or
+Cua AI. "bb" in the name only says which app it works with; the icon is this
+project's own.
 
 ## How it works
 
@@ -61,7 +63,7 @@ The extension makes no network requests of its own and has no analytics.
 ## Publishing to the Chrome Web Store
 
 ```sh
-npm run package --workspace browser-extension   # agent-browser-bridge-<version>.zip, without "key"
+npm run package --workspace browser-extension   # browser-bridge-for-bb-<version>.zip, without "key"
 ```
 
 The store assigns its own id. After the first upload, add that id to

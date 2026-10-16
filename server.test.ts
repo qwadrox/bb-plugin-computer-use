@@ -720,7 +720,7 @@ describe("browser extension", () => {
   it("sends the user to settings when the extension is not set up, and passes refusals through", async () => {
     const { harness } = await load({
       browserReplies: [
-        { ok: false, code: "not_connected", message: "No browser with the Agent Browser Bridge extension is connected." },
+        { ok: false, code: "not_connected", message: "No browser with the Browser Bridge for bb extension is connected." },
         { ok: false, code: "tab_not_shared", message: "Tab 3 is not shared with agents." },
       ],
     });
@@ -747,7 +747,7 @@ describe("browser extension", () => {
     const pending = harness.behavior.callAgentTool("browser_open", { url: "https://example.com" }, { threadId: "thr_1" });
     const request = await asked(harness);
     expect(request).toMatchObject({ title: "Allow browser_open?" });
-    expect(request.payload).toMatchObject({ tool: "browser_open", shownName: "browser_open", reason: expect.stringMatching(/Agent Browser Bridge/) });
+    expect(request.payload).toMatchObject({ tool: "browser_open", shownName: "browser_open", reason: expect.stringMatching(/Browser Bridge for bb/) });
     harness.behavior.submitInteraction(request.id, { allow: "thread" });
     expect(structured(await pending).isError).toBe(false);
     expect(structured(await harness.behavior.callAgentTool("browser_tabs", {}, { threadId: "thr_1" })).isError).toBe(false);

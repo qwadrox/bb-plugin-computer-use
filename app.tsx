@@ -985,7 +985,7 @@ function CopyPath({ value }: { value: string }) {
   );
 }
 
-/** The optional Agent Browser Bridge: off until the user turns it on here. */
+/** The optional Browser Bridge for bb: off until the user turns it on here. */
 export function BrowserExtensionSettings() {
   const { rpc, view, error, busy, run, load } = useBrowserView();
   if (view === null) return <SectionState error={error} />;
@@ -1070,7 +1070,7 @@ export function BrowserExtensionSettings() {
             </li>
           </ol>
           <p>
-            Extension id <code className="text-foreground">{view.extensionId}</code>. Agent Browser Bridge ships with this plugin and is not affiliated with bb or Cua AI.{" "}
+            Extension id <code className="text-foreground">{view.extensionId}</code>. Browser Bridge for bb ships with this plugin; it is not an official bb or Cua AI product.{" "}
             <button type="button" className={linkClass} onClick={() => void load()}>
               Check again
             </button>

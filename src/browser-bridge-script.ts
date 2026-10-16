@@ -1,11 +1,11 @@
 /**
- * The native messaging host for the Agent Browser Bridge extension, written to
+ * The native messaging host for the Browser Bridge for bb extension, written to
  * disk by the host worker and started by the browser. It relays between the
  * extension (length-prefixed JSON on stdin/stdout) and the host worker
  * (newline-delimited JSON on a Unix socket only this user can open). It exits
  * when the browser closes stdin. Node built-ins only.
  */
-export const BRIDGE_SCRIPT = String.raw`// Agent Browser Bridge native host. Written by the Computer Use bb plugin; do not edit.
+export const BRIDGE_SCRIPT = String.raw`// Browser Bridge for bb native host. Written by the Computer Use bb plugin; do not edit.
 import { createServer } from "node:net";
 import { chmodSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";

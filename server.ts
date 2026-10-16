@@ -947,7 +947,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
   const BROWSER_ACTION = {
     key: "browser_extension",
-    reason: "work in the tabs of your own signed-in browser, through the Agent Browser Bridge extension",
+    reason: "work in the tabs of your own signed-in browser, through the Browser Bridge for bb extension",
   };
 
   /** One browser_* call: the setting, the approval, then the extension on the thread's machine. */
@@ -1030,7 +1030,7 @@ export default async function plugin(bb: BbPluginApi) {
     const browserTools = browserExtension ? BROWSER_TOOL_NAMES : [];
     if (browserTools.length > 0) {
       instructions.push(
-        "For web pages in the user's own browser, prefer the browser_* tools (Agent Browser Bridge extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref. If one reports that setup is needed, tell the user instead of switching to cua_* tools.",
+        "For web pages in the user's own browser, prefer the browser_* tools (Browser Bridge for bb extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref. If one reports that setup is needed, tell the user instead of switching to cua_* tools.",
       );
     }
     return {
@@ -1279,7 +1279,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name: "grant", summary: "Request macOS Accessibility and Screen Recording for CuaDriver.app", usage: "bb cua grant [--host <id>]" },
       {
         name: "browser",
-        summary: "Set up the optional Agent Browser Bridge extension, or call its browser_* tools",
+        summary: "Set up the optional Browser Bridge for bb extension, or call its browser_* tools",
         usage: "bb cua browser [status|install|uninstall|on|off|call <tool> [<json-args>]] [--host <id>] [--json]",
       },
     ],

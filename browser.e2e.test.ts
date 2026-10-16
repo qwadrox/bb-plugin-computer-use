@@ -1,5 +1,5 @@
 /**
- * End-to-end check of the Agent Browser Bridge: a real Chromium with the built
+ * End-to-end check of the Browser Bridge for bb: a real Chromium with the built
  * extension, the native host bridge, and the host-side client. Opt-in:
  *
  *   npm run build:extension

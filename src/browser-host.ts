@@ -72,7 +72,7 @@ function shellQuote(value: string): string {
 export function launcherScript(layout: BridgeLayout, runtime: string): string {
   return [
     "#!/bin/sh",
-    "# Agent Browser Bridge native host launcher, written by the Computer Use bb plugin.",
+    "# Browser Bridge for bb native host launcher, written by the Computer Use bb plugin.",
     `ELECTRON_RUN_AS_NODE=1 AGENT_BRIDGE_SOCKETS=${shellQuote(layout.sockets)} exec ${shellQuote(runtime)} ${shellQuote(layout.script)} "$@"`,
     "",
   ].join("\n");
@@ -82,7 +82,7 @@ export function nativeManifest(layout: BridgeLayout): string {
   return `${JSON.stringify(
     {
       name: NATIVE_HOST_NAME,
-      description: "Agent Browser Bridge: lets bb agents work in your browser tabs.",
+      description: "Browser Bridge for bb: lets bb agents work in your browser tabs.",
       path: layout.launcher,
       type: "stdio",
       allowed_origins: EXTENSION_IDS.map((id) => `chrome-extension://${id}/`),
@@ -243,7 +243,7 @@ export async function callBrowser(
     return {
       ok: false,
       code: "not_connected",
-      message: "No browser with the Agent Browser Bridge extension is connected. The browser may be closed, or the extension not installed.",
+      message: "No browser with the Browser Bridge for bb extension is connected. The browser may be closed, or the extension not installed.",
     };
   }
   const wanted = options.browser?.trim().toLowerCase();

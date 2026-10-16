@@ -1,5 +1,5 @@
 {
-  "name": "agent-browser-bridge",
+  "name": "browser-bridge-for-bb",
   "version": "0.1.0",
   "private": true,
   "type": "module",

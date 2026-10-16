@@ -13,7 +13,7 @@ const work = mkdtempSync(join(tmpdir(), "extension-"));
 try {
   cpSync(join(root, "dist"), work, { recursive: true });
   writeFileSync(join(work, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  const out = join(root, `agent-browser-bridge-${manifest.version}.zip`);
+  const out = join(root, `browser-bridge-for-bb-${manifest.version}.zip`);
   rmSync(out, { force: true });
   execFileSync("zip", ["-qr", out, "."], { cwd: work });
   console.log(out);

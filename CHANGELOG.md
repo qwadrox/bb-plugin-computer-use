@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Optional browser extension.** Agent Browser Bridge
+- **Optional browser extension.** Browser Bridge for bb
   (`browser-extension/`, Chromium MV3) lets agents work in the tabs of your own browser
   in Brave, Chrome, Edge or Chromium, in background tabs, through the
   browser's debugger API, so Brave no longer needs Cua Driver's
