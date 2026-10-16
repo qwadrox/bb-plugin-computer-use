@@ -7,7 +7,7 @@ type Override = State["providers"][number]["override"];
 const OVERRIDES: Array<{ value: Override; label: string }> = [
   { value: "inherit", label: "Follow mode" },
   { value: "cua", label: "Cua Driver" },
-  { value: "native", label: "Harness-native" },
+  { value: "native", label: "Provider's own" },
   { value: "off", label: "Off" },
 ];
 
@@ -20,15 +20,26 @@ function decisionTone(decision: State["providers"][number]["decision"]): string 
 export function ProviderOverridesSettings() {
   const { rpc, state, error, busy, run } = useComputerUseState();
   if (state === null) return <SectionState error={error} />;
+  const overridden = state.providers.filter((provider) => provider.override !== "inherit");
 
   return (
-    <Disclosure label="Override routing for individual providers" meta={`${state.providers.length} providers`}>
+    <Disclosure
+      label={
+        overridden.length === 0
+          ? "Every provider follows the routing mode"
+          : `Own routing: ${overridden.map((provider) => provider.displayName).join(", ")}`
+      }
+      meta={`${state.providers.length} providers`}
+    >
       <div data-provider-list className="mt-2 divide-y divide-border/60">
         {state.providers.map((provider) => (
           <div key={provider.id} className="flex min-h-12 items-center gap-3 px-3 py-3">
             <div className="flex min-w-0 flex-1 items-baseline gap-2">
               <span className="truncate text-sm font-medium">{provider.displayName}</span>
-              <span className={`truncate text-xs ${decisionTone(provider.decision)}`}>{provider.decisionLabel}</span>
+              {/* An override names its result in the select; only a provider that follows the mode needs it spelled out. */}
+              {provider.override === "inherit" ? (
+                <span className={`truncate text-xs ${decisionTone(provider.decision)}`}>{provider.decisionLabel}</span>
+              ) : null}
             </div>
             <select
               aria-label={`${provider.displayName} override`}

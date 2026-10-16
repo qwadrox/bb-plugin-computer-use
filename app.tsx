@@ -17,6 +17,7 @@ export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "provider-overrides",
     title: "Provider overrides",
+    description: "A provider set here ignores the routing mode.",
     component: ProviderOverridesSettings,
   });
   app.slots.settingsSection({

@@ -8,7 +8,9 @@ appearing as a nested card inside one large group:
 
 1. **Routing mode** keeps the three routing choices visible because this is the
    primary decision.
-2. **Provider overrides** starts collapsed and expands to the provider list.
+2. **Provider overrides** starts collapsed; its row names the providers with
+   their own routing (or says every provider follows the mode) and expands to
+   the provider list. A row shows its result only while it follows the mode.
 3. **Browser extension** is the optional Browser Bridge for bb. A checkbox
    (off by default) offers the `browser_*` tools; only when it is on does the
    card show each machine's bridge (Install bridge / Remove bridge, which

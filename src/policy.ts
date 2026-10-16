@@ -51,7 +51,7 @@ export function describeDecision(decision: ProviderDecision): string {
     case "cua":
       return "Cua Driver tools";
     case "native":
-      return "Harness-native computer use";
+      return "Provider's own computer use";
     case "off":
       return "No computer use";
   }

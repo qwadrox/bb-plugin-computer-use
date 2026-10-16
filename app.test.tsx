@@ -17,7 +17,7 @@ const baseState = {
   groups: { browser: true, clipboard: true },
   testedVersion: "0.36.0",
   providers: [
-    { id: "codex", displayName: "Codex", available: true, native: true, override: "inherit", decision: "native", decisionLabel: "Harness-native computer use" },
+    { id: "codex", displayName: "Codex", available: true, native: true, override: "inherit", decision: "native", decisionLabel: "Provider's own computer use" },
     { id: "pi", displayName: "Pi", available: true, native: false, override: "inherit", decision: "cua", decisionLabel: "Cua Driver tools" },
   ],
   hosts: [
@@ -166,7 +166,7 @@ describe("settings sections", () => {
     });
 
     const disclosure = await slot.findByRole("button", {
-      name: /Override routing for individual providers/,
+      name: /Every provider follows the routing mode/,
     });
     expect(slot.queryByText("Show provider controls")).toBeNull();
     expect(disclosure.textContent).toContain("2 providers");
@@ -185,7 +185,7 @@ describe("settings sections", () => {
     const select = await slot.findByLabelText("Codex override");
     expect(disclosureRegion?.textContent).not.toContain("has own computer use");
     fireEvent.change(select, { target: { value: "cua" } });
-    await slot.findAllByText("Cua Driver tools");
+    await slot.findByRole("button", { name: /Own routing: Codex/ });
     expect(calls).toEqual([{ providerId: "codex", override: "cua" }]);
     slot.lifecycle.unmount();
   });

@@ -14,6 +14,10 @@
   bringing it to the front, and **Pause agents** in the toolbar stops them.
 - **The Browser extension card comes third** in the settings page, right after
   the routing cards and before Agent tools.
+- **Provider overrides say less twice.** The collapsed row names the providers
+  with their own routing instead of repeating the card title, a row shows its
+  result only while it follows the mode, and "Harness-native" is now
+  "Provider's own", matching **Prefer provider tools**.
 - **The settings page notices a closed driver connection.** It updates when a
   machine's driver connection closes on idle timeout, after a grant change or
   update, or on a disconnect request.
