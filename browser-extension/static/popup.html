@@ -21,14 +21,14 @@
     </div>
     <div id="paused" class="paused" hidden>
       <p>Agents are paused. Closing the debugging bar pauses them too.</p>
-      <button id="resume" type="button">Resume agents</button>
+      <button id="resume" class="primary" type="button">Resume agents</button>
     </div>
     <section>
       <p class="help">Agents can use any tab. Tabs they open go into the purple <strong>Agent</strong> group.</p>
       <button id="pause" type="button">Pause agents</button>
     </section>
     <section>
-      <label class="toggle"><input id="cursor" type="checkbox" checked /> Show the agent's cursor</label>
+      <label class="toggle">Show the agent's cursor <input id="cursor" type="checkbox" role="switch" checked /></label>
       <p class="help">A purple pointer glides to where an agent clicks or types, so you can follow it in the tab.</p>
     </section>
     <script type="module" src="popup.js"></script>

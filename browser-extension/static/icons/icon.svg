@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <rect width="24" height="24" rx="5.5" fill="#6d28d9"/>
-  <g fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M4.5 3.75V13M12 3.75V13"/><circle cx="6.75" cy="10.75" r="2.25"/><circle cx="14.25" cy="10.75" r="2.25"/></g>
-  <path d="M16.02 16.409a0.299 0.299 0 0 1 0.388 -0.388l5.4 2.1a0.3 0.3 0 0 1 -0.02 0.566l-2.066 0.641a0.6 0.6 0 0 0 -0.396 0.396l-0.64 2.066a0.3 0.3 0 0 1 -0.566 0.02z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x=".25" y=".25" width="23.5" height="23.5" rx="5.25" fill="#211c2b" stroke="#fff" stroke-opacity=".14" stroke-width=".5"/>
+  <!-- The agent's cursor with a "bb" name tag. -->
+  <path transform="translate(1.1 1.75) scale(.7)" d="M5 3.5 19.5 13.2 12.6 14.2 9.4 20.8Z" stroke-width="2.86" stroke-linejoin="round" fill="#ac9ad0" stroke="#ac9ad0"/>
+  <rect x="9.6" y="13.2" width="11.4" height="7.4" rx="3.7" fill="#fff" stroke="#211c2b" stroke-width="1.2" paint-order="stroke"/>
+  <g fill="none" stroke="#211c2b" stroke-width="1.35" stroke-linecap="round">
+    <path d="M11.84 14.8V17.57"/>
+    <circle cx="13.26" cy="17.57" r="1.43"/>
+    <path d="M15.91 14.8V17.57"/>
+    <circle cx="17.34" cy="17.57" r="1.43"/>
+  </g>
 </svg>

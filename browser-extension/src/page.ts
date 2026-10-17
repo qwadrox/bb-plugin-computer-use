@@ -620,7 +620,7 @@ export function moveCursor(move: CursorMove): Promise<void> {
     // The tip of the drawing (5, 3.5 in its 24-unit box, drawn at 28 px) sits on the point.
     pointer.style.cssText =
       "position: fixed; left: -6px; top: -4px; width: 28px; height: 28px; opacity: 0; transition: opacity 250ms ease;" +
-      "filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.3)) drop-shadow(0 0 6px rgb(139 92 246 / 0.45)); will-change: transform";
+      "filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.3)) drop-shadow(0 0 6px rgb(113 92 149 / 0.45)); will-change: transform";
     // Built node by node: pages with Trusted Types refuse innerHTML.
     const SVG = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(SVG, "svg");
@@ -632,7 +632,7 @@ export function moveCursor(move: CursorMove): Promise<void> {
     for (const [name, value] of [["x1", "5"], ["y1", "4"], ["x2", "14"], ["y2", "19"], ["gradientUnits", "userSpaceOnUse"]]) {
       gradient.setAttribute(name, value);
     }
-    for (const [offset, color] of [["0", "#a78bfa"], ["1", "#6d28d9"]]) {
+    for (const [offset, color] of [["0", "#8d7aae"], ["1", "#4e3d6c"]]) {
       const stop = document.createElementNS(SVG, "stop");
       stop.setAttribute("offset", offset);
       stop.setAttribute("stop-color", color);
@@ -656,8 +656,8 @@ export function moveCursor(move: CursorMove): Promise<void> {
     const ripple = document.createElement("div");
     ripple.style.cssText =
       "position: fixed; left: -20px; top: -20px; width: 40px; height: 40px; border-radius: 50%; opacity: 0;" +
-      "background: radial-gradient(circle, rgb(139 92 246 / 0.45), rgb(139 92 246 / 0) 70%);" +
-      "box-shadow: inset 0 0 0 1.5px rgb(139 92 246 / 0.6)";
+      "background: radial-gradient(circle, rgb(113 92 149 / 0.4), rgb(113 92 149 / 0) 70%);" +
+      "box-shadow: inset 0 0 0 1.5px rgb(113 92 149 / 0.6)";
     shadow.append(ripple, pointer);
     document.documentElement.append(host);
     cursor = { host, pointer, ripple, x: move.x, y: move.y, timer: 0 };

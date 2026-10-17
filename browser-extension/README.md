@@ -92,8 +92,8 @@ the bridge's native messaging manifests allow both. Bump
 `version` in `static/manifest.json` and `package.json` together.
 
 The store listing text, permission reasons and privacy answers are in
-[`store/LISTING.md`](store/LISTING.md), with the 1280x800 screenshot
-(`node scripts/render-screenshot.mjs <chrome-headless-shell>` renders it).
+[`store/LISTING.md`](store/LISTING.md), with the 1280x800 screenshots
+(`node scripts/render-screenshot.mjs <chrome-headless-shell>` renders them).
 
 Later versions go out through `.github/workflows/publish-extension.yml`: bump
 the version, commit, and push a tag `extension-v<version>` (plugin releases use

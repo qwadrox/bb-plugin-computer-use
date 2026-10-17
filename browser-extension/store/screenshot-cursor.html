@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- Source of the second Chrome Web Store screenshot (1280x800). Render with
+     node scripts/render-screenshot.mjs <chrome-headless-shell>. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../static/popup.css" />
+    <link rel="stylesheet" href="store.css" />
+    <style>
+      .form {
+        position: relative;
+        align-self: center;
+        padding: 28px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg);
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 16px 40px rgb(0 0 0 / 0.08);
+      }
+      .form h3 { margin: 0 0 18px; font-size: 20px; font-weight: 600; color: var(--heading); }
+      .form label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500; color: var(--heading); }
+      .field { margin-bottom: 16px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; }
+      .field.focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+      .field.empty { color: var(--off); }
+      .submit { margin-top: 6px; padding: 10px; border-radius: 8px; background: #181818; color: #fff; text-align: center; font-weight: 500; }
+      /* Same drawing and colours as the cursor in src/page.ts. */
+      .cursor { position: absolute; left: 236px; bottom: 6px; width: 40px; height: 40px;
+        filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.3)) drop-shadow(0 0 6px rgb(113 92 149 / 0.45)); }
+      .ripple { position: absolute; left: 224px; bottom: 20px; width: 40px; height: 40px; border-radius: 50%;
+        background: radial-gradient(circle, rgb(113 92 149 / 0.4), rgb(113 92 149 / 0) 70%);
+        box-shadow: inset 0 0 0 1.5px rgb(113 92 149 / 0.6); }
+    </style>
+  </head>
+  <body class="page">
+    <div class="tabs">
+      <div class="tab">Pull request #42 · example/app</div>
+      <div class="group">
+        <span class="group-label">Agent</span>
+        <div class="tab active">localhost:5173 · Sign-up form</div>
+      </div>
+    </div>
+    <div class="bar">
+      <div class="url">localhost:5173/signup</div>
+      <div class="ext"><img src="../static/icons/icon-32.png" width="18" height="18" alt="" /></div>
+    </div>
+    <div class="debug">"Browser Bridge for bb" started debugging this browser</div>
+    <main>
+      <div>
+        <p class="eyebrow">Browser Bridge for bb</p>
+        <h2>See where the agent clicks and types</h2>
+        <p class="lead">A pointer glides to each field and button the agent uses, then fades when it goes idle. It stays out of the agent's screenshots.</p>
+        <ul class="points">
+          <li>Also works in background tabs, without taking focus</li>
+          <li>Fills forms, chooses options and uploads files</li>
+          <li>Turn the pointer off in the toolbar popup</li>
+        </ul>
+      </div>
+      <div class="form">
+        <h3>Create your account</h3>
+        <label>Name</label>
+        <div class="field">Ada Lovelace</div>
+        <label>Email</label>
+        <div class="field focus">ada@example.com</div>
+        <label>Password</label>
+        <div class="field empty">••••••••••••</div>
+        <div class="submit">Create account</div>
+        <div class="ripple"></div>
+        <svg class="cursor" viewBox="0 0 24 24">
+          <defs>
+            <linearGradient id="fill" x1="5" y1="4" x2="14" y2="19" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#8d7aae" />
+              <stop offset="1" stop-color="#4e3d6c" />
+            </linearGradient>
+          </defs>
+          <path d="M5 3.5 L19.5 13.2 L12.6 14.2 L9.4 20.8 Z" fill="white" stroke="white" stroke-width="4.5" stroke-linejoin="round" />
+          <path d="M5 3.5 L19.5 13.2 L12.6 14.2 L9.4 20.8 Z" fill="url(#fill)" stroke="url(#fill)" stroke-width="2" stroke-linejoin="round" />
+        </svg>
+      </div>
+    </main>
+  </body>
+</html>

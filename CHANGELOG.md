@@ -60,9 +60,14 @@
   own** is disabled for providers without their own computer use. The
   **Browser extension** card shows setup steps only while setup is incomplete,
   and no longer repeats the connected browser.
-- **New icons:** the plugin icon is a window with a pointer and the letters
-  "bb"; the Browser Bridge for bb extension uses the same design on a purple
-  tile (store screenshot re-rendered).
+- **New look, closer to bb's own.** The icon is the agent's cursor with a
+  small "bb" name tag, the way shared apps label each person's cursor. The
+  plugin icon draws it in one colour; the Browser Bridge for bb extension
+  shows a muted violet cursor and a white tag on a dark graphite tile. The
+  extension's popup uses bb's neutral greys, follows the system's light or
+  dark mode, and shows **Show the agent's cursor** as a switch. The agent's
+  cursor in the page is muted violet instead of bright purple. The store has
+  two re-rendered screenshots, the second showing the cursor on a form.
 - **The two browser tool sets are told apart.** The **Browser tools** setting
   is now **Browser window tools (Cua Driver)**: its `cua_browser_*` tools work
   in a Chrome, Edge, Brave or Electron window without an extension. The

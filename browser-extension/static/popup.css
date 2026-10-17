@@ -1,11 +1,44 @@
+/* Neutral greys after bb's own palette, with one muted violet accent. */
 :root {
   color-scheme: light dark;
-  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bg: #fff;
+  --ink: #333;
+  --heading: #181818;
+  --subtle: #636363;
+  --border: color-mix(in oklab, var(--ink) 14%, var(--bg));
+  --surface: color-mix(in oklab, var(--ink) 4%, var(--bg));
+  --hover: color-mix(in oklab, var(--ink) 6%, var(--bg));
+  --accent: #5f4d7e;
+  --on-accent: #fff;
+  --ok: #008a48;
+  --off: #989898;
+  --error: #af2b25;
+  --attention: color-mix(in oklab, #f0b135 22%, var(--bg));
+  font: 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151515;
+    --ink: #c1c1c1;
+    --heading: #e8e8e8;
+    --subtle: #989898;
+    --border: color-mix(in oklab, var(--ink) 19%, var(--bg));
+    --surface: color-mix(in oklab, var(--ink) 5%, var(--bg));
+    --hover: color-mix(in oklab, var(--ink) 9%, var(--bg));
+    --accent: #beaede;
+    --on-accent: #211c2b;
+    --ok: #4bc680;
+    --off: #636363;
+    --error: #ff696d;
+    --attention: color-mix(in oklab, #f0b135 16%, var(--bg));
+  }
 }
 body {
   width: 300px;
   margin: 0;
-  padding: 12px 14px 14px;
+  padding: 14px;
 }
 header {
   display: flex;
@@ -13,60 +46,136 @@ header {
   gap: 8px;
 }
 h1 {
-  font-size: 14px;
   margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--heading);
 }
 p {
   margin: 8px 0;
 }
+strong {
+  font-weight: 600;
+  color: var(--heading);
+}
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--heading);
+}
 .connection::before {
   content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
+  flex: none;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #9ca3af;
+  background: var(--off);
 }
 .connection[data-state="ok"]::before {
-  background: #16a34a;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 22%, transparent);
 }
 .help {
-  color: color-mix(in srgb, currentColor 70%, transparent);
+  color: var(--subtle);
 }
 .error {
   font-size: 12px;
-  color: #b91c1c;
+  color: var(--error);
+}
+.error:empty {
+  display: none;
 }
 .paused {
-  padding: 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  margin-top: 10px;
+  padding: 2px 10px 10px;
+  border-radius: 8px;
+  background: var(--attention);
 }
 button {
   font: inherit;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  background: transparent;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--heading);
   cursor: pointer;
 }
-button:focus-visible {
-  outline: 2px solid #7c3aed;
+button:hover {
+  background: var(--hover);
+}
+button.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+button.primary:hover {
+  background: color-mix(in oklab, var(--accent) 88%, var(--ink));
+}
+button:focus-visible,
+.toggle input:focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 section {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  margin-top: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
 }
 .toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--heading);
   cursor: pointer;
 }
+/* The checkbox drawn as a switch. */
 .toggle input {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 28px;
+  height: 16px;
   margin: 0;
-  accent-color: #7c3aed;
+  border-radius: 8px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.toggle input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 150ms ease;
+}
+.toggle input:checked {
+  background: var(--accent);
+}
+.toggle input:checked::after {
+  transform: translateX(12px);
+}
+@media (prefers-color-scheme: dark) {
+  .toggle input:checked::after {
+    background: var(--on-accent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle input,
+  .toggle input::after {
+    transition: none;
+  }
 }

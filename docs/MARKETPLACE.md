@@ -19,6 +19,9 @@ The name and icon keep it apart from the older **Computer Use** entry
   no HTML, images or tables.
 - `screenshots/desktop-browser-agent/` (optional): at most 6, PNG/JPEG/WebP, at least
   1200 px wide, at most 2 MiB. Keep personal thread titles out of them.
+  Copy `docs/screenshots/*.png`; `node docs/screenshots/frame.mjs
+  <chrome-headless-shell>` renders them from the settings captures in
+  `docs/screenshots/src/`.
 
 ## Releasing
 

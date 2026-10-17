@@ -8,6 +8,8 @@ work in your own browser tabs too.
 A community plugin, not affiliated with or endorsed by Cua AI, Inc. or the bb
 team. See [NOTICE.md](NOTICE.md).
 
+![Desktop & Browser Agent settings in bb](docs/screenshots/1-overview.png)
+
 ## Features
 
 - **Desktop and browser control.** Agents read and operate native apps and
@@ -28,6 +30,11 @@ team. See [NOTICE.md](NOTICE.md).
   plugin release, and the settings page shows what changed.
 - **Works on every machine.** Each thread runs on the machine that owns its
   environment, remote ones included.
+
+| | |
+| --- | --- |
+| ![Per-provider routing](docs/screenshots/2-routing.png) | ![Browser extension](docs/screenshots/3-browser-extension.png) |
+| ![Agent tools](docs/screenshots/4-agent-tools.png) | ![Machines](docs/screenshots/5-machines.png) |
 
 ## Get started
 

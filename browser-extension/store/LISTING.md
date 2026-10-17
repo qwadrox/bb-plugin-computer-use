@@ -8,9 +8,10 @@ from `npm run package --workspace browser-extension`.
 - **Category:** Developer Tools
 - **Language:** English
 - **Store icon:** `static/icons/icon-128.png`
-- **Screenshot:** `store/screenshot-1280x800.png` (source: `store/screenshot.html`,
-  render with `node scripts/render-screenshot.mjs <chrome-headless-shell>`)
-- **Homepage / support URL:** https://github.com/qwadrox/bb-plugin-computer-use
+- **Screenshots:** `store/screenshot-1280x800.png` and
+  `store/screenshot-cursor-1280x800.png` (sources: the `.html` files beside
+  them; render both with `node scripts/render-screenshot.mjs <chrome-headless-shell>`)
+- **Homepage / support URL:** https://github.com/qwadrox/bb-plugin-desktop-browser-agent
 
 **Description:**
 
@@ -28,7 +29,7 @@ Requirements: the bb app and its Desktop & Browser Agent plugin, with the browse
 
 Works in Brave, Chrome, Edge and Chromium on macOS and Linux.
 
-Unofficial: not affiliated with bb or Cua AI. "bb" in the name only says which app it works with. Source code: https://github.com/qwadrox/bb-plugin-computer-use
+Unofficial: not affiliated with bb or Cua AI. "bb" in the name only says which app it works with. Source code: https://github.com/qwadrox/bb-plugin-desktop-browser-agent
 ```
 
 ## Privacy practices
@@ -83,4 +84,4 @@ Certify all three:
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose
 - I do not use or transfer user data to determine creditworthiness or for lending purposes
 
-**Privacy policy URL:** https://github.com/qwadrox/bb-plugin-computer-use/blob/main/browser-extension/README.md#permissions
+**Privacy policy URL:** https://github.com/qwadrox/bb-plugin-desktop-browser-agent/blob/main/browser-extension/README.md#permissions
