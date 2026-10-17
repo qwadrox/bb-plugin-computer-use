@@ -31,6 +31,8 @@ const PROBE_TIMEOUT_MS = 8_000;
 const GRANT_TIMEOUT_MS = 120_000;
 const DAEMON_START_TIMEOUT_MS = 10_000;
 const DEFAULT_IDLE_DISCONNECT_MS = 10 * 60_000;
+/** A structured string this long that a text part already holds is left out. */
+const REPEATED_TEXT_MIN = 24;
 const STRUCTURED_TEXT_LIMIT = 200_000;
 const INSTALL_TAIL_LINES = 80;
 
@@ -211,6 +213,34 @@ export function parseDaemonGrants(psOutput: string): string[] | null {
   return [...line.matchAll(/--grant(?:=|\s+)(\S+)/g)].map((match) => match[1] ?? "").filter(Boolean).sort();
 }
 
+/**
+ * The part of structuredContent the text parts do not already say. Drivers
+ * often send the same tree or message in both; the agent should read it once.
+ * Null when nothing is left.
+ */
+export function structuredExtra(structured: unknown, texts: string[]): unknown {
+  if (structured === null || structured === undefined) return null;
+  const json = JSON.stringify(structured);
+  if (texts.some((text) => text.trim() === json || sameJson(text, json))) return null;
+  if (typeof structured !== "object" || Array.isArray(structured)) return structured;
+  const extra = Object.fromEntries(
+    Object.entries(structured).filter(
+      ([, value]) => !(typeof value === "string" && value.length >= REPEATED_TEXT_MIN && texts.some((text) => text.includes(value))),
+    ),
+  );
+  return Object.keys(extra).length > 0 ? extra : null;
+}
+
+function sameJson(text: string, json: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+  try {
+    return JSON.stringify(JSON.parse(trimmed)) === json;
+  } catch {
+    return false;
+  }
+}
+
 export function mapContent(parts: McpContentPart[], structured: unknown): ToolContentPart[] {
   const mapped: ToolContentPart[] = [];
   for (const part of parts) {
@@ -222,8 +252,10 @@ export function mapContent(parts: McpContentPart[], structured: unknown): ToolCo
       mapped.push({ type: "text", text: JSON.stringify(part) });
     }
   }
-  if (structured !== null && structured !== undefined) {
-    const json = JSON.stringify(structured);
+  const texts = mapped.flatMap((part) => (part.type === "text" ? [part.text] : []));
+  const extra = structuredExtra(structured, texts);
+  if (extra !== null) {
+    const json = JSON.stringify(extra);
     mapped.push({
       type: "text",
       text:

@@ -124,7 +124,8 @@ while you use other tabs in the same window. Window tools such as
 shares your screen, the first attach brings it to the front once to approve
 the connection, then your app comes back; the connection is reused for up to
 30 minutes idle and 8 hours in total. With the setting off, the plugin refuses
-that attach itself. Turning the setting off blocks those attaches at once, but the running
+that attach itself. Brave cannot be attached this way; agents use the
+extension's `browser_*` tools or the window tools there. Turning the setting off blocks those attaches at once, but the running
 service keeps the grant until it restarts: run `cua-driver stop` to drop it
 now. The plugin never removes a grant itself, since someone else may have
 started the service that way. On Linux and Windows, start
@@ -172,11 +173,42 @@ it out, and in a tab that is not in front it moves without animating. Untick
 **Show the agent's cursor** in the extension's popup to turn it off.
 
 Tools: `browser_tabs`, `browser_open`, `browser_read` (a text outline with
-`[eN]` refs), `browser_click`, `browser_type`, `browser_select`,
-`browser_key`, `browser_scroll`, `browser_navigate`, `browser_screenshot`,
-`browser_close`, `browser_upload`. They obey routing like the `cua_*` tools,
-and with **Ask before sensitive actions** on, the first one in a thread asks
-you. Agents cannot reach `chrome://` pages or other extensions.
+`[eN]` refs), `browser_click`, `browser_hover`, `browser_type`,
+`browser_select`, `browser_fill`, `browser_key`, `browser_scroll`,
+`browser_navigate`, `browser_dialog`, `browser_screenshot`, `browser_close`,
+`browser_upload`. They obey routing like the `cua_*` tools, and with **Ask
+before sensitive actions** on, the first one in a thread asks you. Agents
+cannot reach `chrome://` pages or other extensions' pages; a tab that shows
+another extension's popup or frame (a password manager, for example) answers
+`blocked_by_extension`, and agents switch to the window tools for it.
+
+How agents see a page:
+
+- `browser_read` lists headings, text, and interactive elements with refs.
+  Same-site frames are read too; another site's frame shows as one line.
+  `query` keeps matching lines (a ref gives that element's line), `scope`
+  reads only the main region, the open dialog, or the part under a ref, and
+  `wait_for` waits up to 10 seconds for a text to appear first. An empty page
+  says what the browser reports (still loading, hidden) instead of nothing.
+- A ref stays with its element while the element is on the page and
+  unchanged, across reads, actions and agents; a new or changed element gets
+  a new number, and numbers are not reused within a tab, so an old ref never
+  names a different element.
+- Every action answers with the element it acted on, the lines of the outline
+  it added and removed (or the new page's outline after a navigation), and
+  the page's URL and title. It also reports a dialog the page opened, tabs it
+  opened (they stay in the background, in the **Agent** group, and the tab
+  in front stays in front), and a file picker it opened. Actions take
+  `wait_for` too.
+- An alert, confirm or prompt freezes its tab until `browser_dialog` answers
+  it; other calls on that tab say so instead of hanging. The browser still
+  shows the dialog, so you can answer it yourself.
+- While an action runs, a file picker the page opens is held back instead of
+  appearing on your screen, and `browser_upload` fills it. Outside agent
+  actions, pickers open as usual.
+- `browser_fill` fills a form in one call: text fields, selects, and
+  checkboxes or switches (true or false). It does not submit.
+- Screenshots are at most 1280 pixels wide.
 
 `browser_upload` attaches files from this machine to a page's file input, as
 choosing them in the file picker would, in any of these browsers and in
@@ -280,6 +312,8 @@ thread turn ──▶ bb server (plugin server.ts)
   plugin's key-value store; before a machine has been read, agents get the
   tested snapshot. Arguments are forwarded untouched; the plugin adds the
   thread's session label.
+- A driver result's structured content is passed on only for what its text
+  does not already say, so agents do not read the same tree twice.
 - When a thread goes idle, fails, is archived, or is deleted, the plugin ends
   that thread's Cua session.
 

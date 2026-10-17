@@ -1,6 +1,6 @@
 ---
 name: cua-computer-use
-description: Drive native desktop apps and browser windows on the thread's machine through the cua_* tools (Cua Driver). Use when the user asks to operate, automate, test, or inspect a real GUI application (Outlook, Teams, a browser, any desktop app), or when a task's outcome lives in a window rather than in files or a shell.
+description: Drive native desktop apps and browser windows on the thread's machine through the cua_* tools (Cua Driver), and web pages in the user's own browser through the browser_* tools (Browser Bridge for bb extension). Use when the user asks to operate, automate, test, or inspect a real GUI application or web page (Outlook, Teams, a web app, a form, any desktop app), or when a task's outcome lives in a window or a tab rather than in files or a shell.
 ---
 
 # Computer use with Cua Driver
@@ -9,6 +9,18 @@ The `cua_*` tools run on the machine that owns this thread's environment and
 act in the background by default: no focus steal, no cursor hijack. This skill
 condenses the upstream Cua Driver 0.36 skill pack (MIT, Cua AI, Inc.); tool
 names here carry the `cua_` prefix.
+
+## Pick the route
+
+| The task is in… | Use |
+| --- | --- |
+| A web page, and you have `browser_*` tools | `browser_*` (background tabs of the user's own browser, any Chromium incl. Brave) |
+| A web page, no `browser_*` tools | `cua_browser_*` in Chrome or Edge; window tools otherwise |
+| A desktop app, or a browser page `browser_*` cannot reach | `cua_get_window_state` + `cua_run_steps` |
+
+Before handing a step to the user (picking a file, clicking something),
+try the other route: the window tools can reach what the extension cannot,
+and `browser_upload` attaches files without a picker.
 
 ## Which tools you have
 
@@ -57,8 +69,9 @@ names here carry the `cua_` prefix.
 
    Read `steps[].ok` and `failed_step`; steps before a failure ran and are not
    rolled back. Split the batch where an answer decides the next step.
-5. **Re-read with `since: "latest"`** to get only changed rows. To just look,
-   pass `include_accessibility_tree: false`.
+5. **Re-read with `since: "latest"`** to get only changed rows. Pass
+   `include_screenshot: false` for routine reads (the tree is what you act
+   on); to just look, pass `include_accessibility_tree: false`.
 6. **Verify at checkpoints** (after a meaningful change, before finishing)
    with `cua_verify_state` or one targeted read. A successful call or
    `effect: "unverifiable"` is not proof the task is done.
@@ -87,20 +100,51 @@ window, pid or foreground attach.
   has open when the task is about that page (an open mail, a form they
   started); otherwise work in a tab you opened, and do not navigate away
   from a page the user is using.
-- `browser_read {tab_id}` returns a text outline with `[eN]` refs; pass
-  `query` to keep matching lines only, and the offset it names for more.
-  `browser_click`, `browser_type`, `browser_select`, `browser_key` and
-  `browser_scroll` take those refs. Refs expire when the page changes
-  (`stale_ref`): read again.
-- `browser_upload {tab_id, ref, paths}` attaches local files to a file
-  input, with no picker and no drag and drop: do not ask the user to drop a
-  file. `browser_read` lists file inputs as `file` lines, hidden ones behind
-  a dropzone too (`hidden`); pass that ref, or the dropzone's. Paths are
-  absolute paths on this machine. `no_file_access` means the user has to turn
-  on **Allow access to file URLs** for the extension once: pass on the link
-  the error gives, and wait.
-- `browser_screenshot` may answer `not_rendered` for a background tab; read
-  the page instead of bringing the tab to the front.
+- `browser_read {tab_id}` returns a text outline with `[eN]` refs. Narrow it:
+  `query` keeps matching lines (`query: "e12"` gives that element's line),
+  `scope: "main"` or `"dialog"` or a ref reads one region, and the offset it
+  names gives more. Same-site frames are included; another site's frame is a
+  placeholder line (use a screenshot or the window tools for it).
+- **Refs are stable.** A ref keeps naming its element while the element is
+  on the page and unchanged, across reads and actions; a new or changed
+  element gets a new number, so an old ref never hits the wrong element.
+  `stale_ref` means it is gone or changed: read again.
+- **Every action answers with what changed**: the target's line, `+`/`-`
+  outline lines (or the new page's outline after a navigation), and the page
+  URL. Read again only when you need the rest of the page. "Did not change"
+  means the click may need something else: content still loading
+  (`wait_for`), a covered element (the result says), or a check with
+  `browser_screenshot`.
+- `wait_for: "text"` on an action or a read waits up to 10 s for that text,
+  for pages that load after the action (search results, a saved message).
+- Act with `browser_click`, `browser_type` (`replace`, `submit`),
+  `browser_select` (a `<select>`; for a custom dropdown click it, then its
+  option), `browser_hover` (menus that open on hover), `browser_key`,
+  `browser_scroll` and `browser_navigate` (also back, forward, reload).
+  `browser_fill {fields: [{ref, value}]}` fills a whole form in one call:
+  text replaces, a select chooses, a checkbox takes true or false. It does
+  not submit.
+- **Dialogs:** a result that says the page opened an alert, confirm or
+  prompt means the tab is frozen until you answer it with `browser_dialog
+  {accept, text?}`. Accept a confirm only if the user asked for that step.
+- **New tabs:** a link that opens a tab reports it under "It opened tab N";
+  it stays in the background. Read it by that tab_id, and close it when done.
+- **Files:** `browser_upload {tab_id, ref, paths}` attaches local files to a
+  file input, with no picker and no drag and drop: do not ask the user to
+  drop a file. `browser_read` lists file inputs as `file` lines, hidden ones
+  behind a dropzone too (`hidden`); pass that ref, or the dropzone's. A click
+  on an upload button that would open the system picker is held back and
+  reported; then call `browser_upload` without ref. Paths are absolute paths
+  on this machine. `no_file_access` means the user has to turn on **Allow
+  access to file URLs** for the extension once: pass on the link the error
+  gives, and wait.
+- `browser_screenshot` (at most 1280 px wide) may answer `not_rendered` for
+  a background tab; read the page instead of bringing the tab to the front.
+- `blocked_by_extension` (another extension's popup or frame, such as a
+  password manager) and `restricted_page` (browser settings, extension
+  store): the extension cannot act there, but the window tools can. Use
+  `cua_get_window_state` on the browser window, or ask the user to close the
+  popup.
 - `paused` means the user closed the browser's debugging bar: stop and tell
   them; they resume from the extension. `not_connected` or `not_installed`
   means setup: give the user the settings link, do not fall back to `cua_*`
@@ -109,7 +153,7 @@ window, pid or foreground attach.
 
 ## Browser windows
 
-Bind a Chrome, Edge, Brave or Electron window with
+Bind a Chrome, Edge or Electron window with
 `cua_get_browser_state {pid, window_id}`, then use `cua_browser_click`,
 `cua_browser_type`, `cua_browser_navigate` and `cua_browser_pointer` with the
 returned refs. If binding is refused, `detail.next_call` names the
@@ -118,6 +162,9 @@ returned refs. If binding is refused, `detail.next_call` names the
 - A browser people use daily is a signed-in profile. Attaching needs the
   **Signed-in browser profiles** setting; if the tool says it is off, ask the
   user instead of working around it.
+- Brave cannot be attached this way (`browser_route_unavailable`). In Brave
+  use the `browser_*` tools, or the window tools; do not loop on
+  `cua_browser_prepare`.
 - `cua_browser_*` tools act on one tab by `tab_id`, whichever tab the user
   is looking at, so the user can keep working in other tabs. Window tools
   see only the tab showing in that window; prefer `cua_browser_*` tools for

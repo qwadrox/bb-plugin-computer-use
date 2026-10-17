@@ -30,9 +30,23 @@ const SUMMARY_LIMIT = 160;
 const ANNOTATION_KEYS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const;
 
 /** The text up to its first sentence end, bounded; the whole text when it has none. */
+/** Words with a dot that do not end a sentence. */
+const ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|approx|incl|min|max|ca|no)\.$/i;
+/** A first sentence shorter than this keeps the next one. */
+const SHORT_SENTENCE = 60;
+
 export function firstSentence(text: string, limit = SUMMARY_LIMIT): string {
   const flat = text.replace(/\s+/g, " ").trim();
-  const sentence = /^(.+?[.!?])(\s|$)/.exec(flat)?.[1] ?? flat;
+  // A sentence ends at . ! or ? before a space, except after an abbreviation such as "e.g.".
+  const ends: number[] = [];
+  for (const match of flat.matchAll(/[.!?](?=\s|$)/g)) {
+    const before = flat.slice(0, match.index + 1);
+    if (!ABBREVIATION.test(before)) ends.push(match.index + 1);
+  }
+  // A short first sentence ("Default false.") says little without the next one.
+  let end = ends.find((index) => index >= SHORT_SENTENCE) ?? flat.length;
+  if (end > limit) end = ends.filter((index) => index <= limit).pop() ?? end;
+  const sentence = flat.slice(0, end);
   return sentence.length > limit ? `${sentence.slice(0, limit - 1)}…` : sentence;
 }
 

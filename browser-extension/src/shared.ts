@@ -35,17 +35,63 @@ export interface BridgeParams {
   status: {};
   tabs: {};
   open: { url: string };
-  read: { tab_id: number; query?: string; offset?: number; max_chars?: number };
-  click: { tab_id: number; ref: string };
-  type: { tab_id: number; ref: string; text: string; replace?: boolean; submit?: boolean };
-  select: { tab_id: number; ref: string; option: string };
-  key: { tab_id: number; key: string };
+  /** `scope` is "main", "dialog" or a ref; `wait_for` waits up to 10 s for text to appear first. */
+  read: { tab_id: number; query?: string; offset?: number; max_chars?: number; scope?: string; wait_for?: string };
+  click: { tab_id: number; ref: string; wait_for?: string };
+  hover: { tab_id: number; ref: string; wait_for?: string };
+  type: { tab_id: number; ref: string; text: string; replace?: boolean; submit?: boolean; wait_for?: string };
+  select: { tab_id: number; ref: string; option: string; wait_for?: string };
+  /** Each field is typed into (replacing), chosen in, or ticked (true) or cleared (false). */
+  fill: { tab_id: number; fields: Array<{ ref: string; value: string | boolean }>; wait_for?: string };
+  key: { tab_id: number; key: string; wait_for?: string };
   scroll: { tab_id: number; direction?: "up" | "down"; amount?: number; ref?: string };
-  navigate: { tab_id: number; url: string };
+  navigate: { tab_id: number; url: string; wait_for?: string };
   screenshot: { tab_id: number };
   close: { tab_id: number };
   /** Absolute paths on the browser's machine; `ref` is a file input, or an element around one. */
-  upload: { tab_id: number; ref?: string; paths: string[] };
+  upload: { tab_id: number; ref?: string; paths: string[]; wait_for?: string };
+  /** Answers the alert, confirm or prompt a tab is showing; `text` is a prompt's answer. */
+  dialog: { tab_id: number; accept: boolean; text?: string };
+}
+
+/** A JavaScript dialog (alert, confirm, prompt, beforeunload) a tab is showing. */
+export interface PageDialog {
+  type: string;
+  message: string;
+  default_prompt: string;
+}
+
+/** How an action changed the tab's outline, compared line by line. */
+export interface PageChanges {
+  added: string[];
+  removed: string[];
+  /** Set instead of the lists when most of the page changed: the start of its new outline. */
+  outline?: string;
+  /** Some lines or the outline were left out. */
+  truncated?: boolean;
+}
+
+export interface TabInfo {
+  tab_id: number;
+  title: string;
+  url: string;
+}
+
+/** What every action answers, besides its own fields (route, value, chosen, files…). */
+export interface ActionResult {
+  /** The ref's outline line before the action, so the agent sees what it acted on. */
+  target?: string;
+  url: string;
+  title: string;
+  /** Missing when the page could not be read afterwards. */
+  changes?: PageChanges;
+  /** The action opened a dialog; it waits for browser_dialog, and nothing else in the tab runs until then. */
+  dialog?: PageDialog;
+  /** Tabs the action opened, such as a link with target=_blank. They stay in the background. */
+  opened_tabs?: TabInfo[];
+  wait_for?: { text: string; found: boolean };
+  /** The action opened a file picker; the extension held it back, and browser_upload without ref fills it. */
+  file_chooser?: { multiple: boolean };
 }
 
 /** Every method the extension answers. */
@@ -74,7 +120,12 @@ export type BridgeErrorCode =
   | "not_rendered"
   | "page_error"
   | "no_file_input"
-  | "no_file_access";
+  | "no_file_access"
+  | "dialog_open"
+  | "no_dialog"
+  | "not_visible"
+  | "blocked_by_extension"
+  | "restricted_page";
 
 /** Codes the plugin's host raises itself (src/browser-host.ts), before or instead of the extension. */
 export type HostErrorCode =

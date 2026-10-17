@@ -43,7 +43,7 @@ Lets coding agents running in the bb app on the user's own computer read and ope
 
 - `debugger`:
   ```
-  Agents act through the Chrome DevTools Protocol: it delivers trusted clicks, key presses and typing, and captures screenshots, in tabs that are in the background, which content scripts cannot do. The debugger attaches only to a tab an agent is working in, the browser shows its debugging bar meanwhile, and it detaches after a minute of inactivity. Closing the bar pauses agents.
+  Agents act through the Chrome DevTools Protocol: it delivers trusted clicks, hovers, key presses and typing, captures screenshots, and answers a page's alert, confirm and prompt dialogs, in tabs that are in the background, which content scripts cannot do. The debugger attaches only to a tab an agent is working in, the browser shows its debugging bar meanwhile, and it detaches after a minute of inactivity. Closing the bar pauses agents.
   ```
 - `nativeMessaging`:
   ```

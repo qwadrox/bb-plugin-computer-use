@@ -342,7 +342,8 @@ function refusalCode(result: ToolCallResult): string | null {
 export function isPermissionFailure(result: ToolCallResult): boolean {
   if (!result.isError) return false;
   const code = refusalCode(result);
-  if (code !== null) return /permission|^tcc_/.test(code);
+  // Only macOS privacy codes: a browser's own permission prompt (remote debugging) is not one.
+  if (code !== null) return /^tcc_|^permissions?_(?:pending|missing|denied|required)$|^(?:accessibility|screen_recording)_|direct_capture|not_trusted/.test(code);
   return /permissions?_pending|tcc_(?:accessibility|screen_recording)|(?:accessibility|screen recording)(?: permission)? (?:is )?not granted|AX is not trusted|direct[_ -]?capture/i.test(
     toolResultText(result),
   );
@@ -1020,7 +1021,12 @@ export default async function plugin(bb: BbPluginApi) {
     const browserTools = browserExtension ? BROWSER_TOOL_NAMES : [];
     if (browserTools.length > 0) {
       instructions.push(
-        "For web pages in the user's own browser, prefer the browser_* tools (Browser Bridge for bb extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref. To upload a file, call browser_upload with its path instead of asking the user to pick or drag it. If one reports that setup is needed, tell the user instead of switching to cua_* tools.",
+        "For web pages in the user's own browser, prefer the browser_* tools (Browser Bridge for bb extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref; each action answers with what changed on the page, so read again only for the rest. To upload a file, call browser_upload with its path instead of asking the user to pick or drag it. If one reports that setup is needed, tell the user instead of switching to cua_* tools; if one cannot reach a page (blocked_by_extension, restricted_page), use the cua_* window tools on that browser window before asking the user.",
+      );
+    }
+    if (settingsNow.browserTools) {
+      instructions.push(
+        `Cua Driver cannot attach its browser tools to Brave (cua_browser_prepare refuses it); in Brave use ${browserTools.length > 0 ? "the browser_* tools or " : ""}the window tools (cua_get_window_state, cua_run_steps).`,
       );
     }
     return {

@@ -5,18 +5,27 @@
  * defines both in the page ahead of every call.
  */
 
-/** The document and every open shadow root in it, the document first. */
+/** The document, every open shadow root and every same-origin frame's document in it, the document first. */
 export function pageRoots(): Array<Document | ShadowRoot> {
   const roots: Array<Document | ShadowRoot> = [document];
   for (const root of roots) {
     for (const element of Array.from(root.querySelectorAll("*"))) {
       if (element.shadowRoot !== null) roots.push(element.shadowRoot);
+      if (element.tagName === "IFRAME" || element.tagName === "FRAME") {
+        let inner: Document | null = null;
+        try {
+          inner = (element as HTMLIFrameElement).contentDocument;
+        } catch {
+          // Another site's frame: not reachable from this page.
+        }
+        if (inner !== null) roots.push(inner);
+      }
     }
   }
   return roots;
 }
 
-/** The element carrying a snapshot ref, in the document or any open shadow root. */
+/** The element carrying a snapshot ref, in the document, an open shadow root or a same-origin frame. */
 export function findRef(ref: string): Element | null {
   const selector = `[data-agent-ref="${CSS.escape(ref)}"]`;
   for (const root of pageRoots()) {
@@ -30,6 +39,12 @@ export interface SnapshotOptions {
   query: string | null;
   offset: number;
   maxChars: number;
+  /** "main", "dialog", a ref, or null for the whole page. */
+  scope: string | null;
+  /** The lowest ref number to hand out, so refs from an earlier page in the tab are not reused. */
+  start: number;
+  /** Return the outline's lines too, for comparing before and after an action. */
+  lines: boolean;
 }
 
 export interface SnapshotResult {
@@ -37,26 +52,59 @@ export interface SnapshotResult {
   total: number;
   nextOffset: number | null;
   refs: number;
+  /** The next ref number to hand out. */
+  next: number;
+  /** True when the page body gave no lines at all. */
+  empty: boolean;
+  /** The scope asked for is not on the page. */
+  scopeMissing: boolean;
+  lines?: string[];
 }
 
-/** A text outline of the page; interactive elements get a `[eN]` ref stored in `data-agent-ref`. */
+/**
+ * A text outline of the page; interactive elements get a `[eN]` ref stored in
+ * `data-agent-ref`. A ref stays with its element across snapshots while the
+ * element keeps its role and name (a field may change its name as it is
+ * filled); a changed or new element gets a new number, and refs of elements
+ * that are gone or hidden are dropped. So an old ref never names a different
+ * element: it names the same one, or none.
+ */
 export function snapshotPage(options: SnapshotOptions): SnapshotResult {
   const ATTRIBUTE = "data-agent-ref";
+  const WAS = "data-agent-was";
+  const NEXT = "data-agent-next";
   const INTERACTIVE = new Set([
     "button", "link", "checkbox", "radio", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "option",
     "switch", "combobox", "listbox", "textbox", "searchbox", "slider", "spinbutton", "treeitem", "file",
   ]);
+  // Roles whose name may follow their value; their refs survive a name change.
+  const VALUE_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutton", "slider"]);
   const SPECIAL =
-    "a[href],button,input:not([type=hidden]),select,textarea,summary,[role],[contenteditable=''],[contenteditable=true],h1,h2,h3,h4,h5,h6,table,ul,ol";
-  const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "META", "LINK", "SVG", "IFRAME", "CANVAS"]);
+    "a[href],button,input:not([type=hidden]),select,textarea,summary,[role],[contenteditable=''],[contenteditable=true],h1,h2,h3,h4,h5,h6,table,ul,ol,iframe";
+  const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "META", "LINK", "SVG", "CANVAS"]);
+  // Read item by item, row by row, even with no control inside.
+  const CONTAINERS = new Set(["UL", "OL", "DL", "TABLE", "THEAD", "TBODY", "TFOOT"]);
   const MAX_LINES = 4000;
 
+  const previous = new Map<string, Element>();
+  let next = Math.max(1, options.start, Number(document.documentElement.getAttribute(NEXT)) || 0);
   for (const root of pageRoots()) {
-    for (const element of Array.from(root.querySelectorAll(`[${ATTRIBUTE}]`))) element.removeAttribute(ATTRIBUTE);
+    for (const element of Array.from(root.querySelectorAll(`[${ATTRIBUTE}]`))) {
+      const ref = element.getAttribute(ATTRIBUTE) ?? "";
+      const number = Number(ref.slice(1));
+      if (Number.isFinite(number)) next = Math.max(next, number + 1);
+      // A copy of a ref'd node (cloned markup) must not share its ref.
+      if (previous.has(ref)) {
+        element.removeAttribute(ATTRIBUTE);
+        element.removeAttribute(WAS);
+      } else {
+        previous.set(ref, element);
+      }
+    }
   }
 
   const lines: string[] = [];
-  let refs = 0;
+  const seen = new Set<string>();
 
   const clean = (value: string | null | undefined, limit: number): string => {
     const text = (value ?? "").replace(/\s+/g, " ").trim();
@@ -66,7 +114,7 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
 
   const isVisible = (element: Element): boolean => {
     if (element.getAttribute("aria-hidden") === "true") return false;
-    const style = getComputedStyle(element);
+    const style = (element.ownerDocument.defaultView ?? window).getComputedStyle(element);
     if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
     if (style.display === "contents") return true;
     return element.getClientRects().length > 0;
@@ -103,21 +151,30 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
     if (labelledBy !== null) {
       const text = labelledBy
         .split(/\s+/)
-        .map((id) => (document.getElementById(id) as HTMLElement | null)?.innerText ?? "")
+        .map((id) => (element.ownerDocument.getElementById(id) as HTMLElement | null)?.innerText ?? "")
         .join(" ");
       if (text.trim() !== "") return text;
     }
     const labels = (element as HTMLInputElement).labels;
     if (labels !== null && labels !== undefined && labels.length > 0) {
+      // A label around its control holds the control's text too (a select's options): leave controls out.
+      const textOf = (node: Node): string => {
+        if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+        if (node.nodeType !== Node.ELEMENT_NODE || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes((node as Element).tagName)) return "";
+        return Array.from(node.childNodes).map(textOf).join(" ");
+      };
       return Array.from(labels)
-        .map((entry) => entry.innerText)
+        .map((entry) => textOf(entry))
         .join(" ");
     }
     if (element.tagName === "INPUT") {
       const input = element as HTMLInputElement;
       if (["button", "submit", "reset"].includes(input.type)) return input.value;
-      // A dropzone's file input is usually unlabelled: the text around it says what it takes.
-      if (input.type === "file") return input.title || input.name || (input.parentElement?.innerText ?? "");
+      // A dropzone's file input is usually unlabelled: the short text around it says what it takes.
+      if (input.type === "file") {
+        const around = input.parentElement?.innerText ?? "";
+        return input.title || input.name || (around.trim().length <= 120 ? around : input.id);
+      }
       return input.placeholder || input.title || input.name || "";
     }
     if (element.tagName === "TEXTAREA") {
@@ -136,7 +193,7 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
     if (tag === "INPUT" || tag === "TEXTAREA") {
       const input = element as HTMLInputElement;
       if (input.type === "checkbox" || input.type === "radio") {
-        if (input.checked) parts.push("checked");
+        parts.push(input.checked ? "checked" : "unchecked");
       } else if (input.type === "password") {
         if (input.value !== "") parts.push("value=(hidden)");
       } else if (input.type === "file") {
@@ -167,14 +224,29 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
     ] as const) {
       const value = element.getAttribute(attribute);
       if (value === "true") parts.push(word);
-      if (value === "false" && attribute === "aria-expanded") parts.push("collapsed");
+      if (value === "false" && (attribute === "aria-expanded" || attribute === "aria-checked")) {
+        parts.push(attribute === "aria-expanded" ? "collapsed" : "unchecked");
+      }
     }
     if (element.getAttribute("aria-disabled") === "true") parts.push("disabled");
     if (tag === "A") {
       const href = element.getAttribute("href") ?? "";
       if (href !== "" && !href.startsWith("javascript:")) parts.push(`href=${quoted(clean(href, 100))}`);
+      if (element.getAttribute("target") === "_blank") parts.push("new-tab");
     }
     return parts.length > 0 ? ` ${parts.join(" ")}` : "";
+  };
+
+  /** The element's ref: its old one while it is the same element, otherwise a new number. */
+  const refFor = (element: Element, role: string, identity: string): string => {
+    const old = element.getAttribute(ATTRIBUTE);
+    const was = element.getAttribute(WAS);
+    const same = was === identity || (VALUE_ROLES.has(role) && was !== null && was.startsWith(`${role} `));
+    const ref = old !== null && same && !seen.has(old) ? old : `e${next++}`;
+    element.setAttribute(ATTRIBUTE, ref);
+    element.setAttribute(WAS, identity);
+    seen.add(ref);
+    return ref;
   };
 
   const push = (line: string): void => {
@@ -186,12 +258,32 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
     // Dropzones and upload buttons hide their file input; list it anyway, so browser_upload has a ref.
     const hiddenFile = !isVisible(element) && element.tagName === "INPUT" && (element as HTMLInputElement).type === "file";
     if (!hiddenFile && !isVisible(element)) return;
+    if (element.tagName === "IFRAME" || element.tagName === "FRAME") {
+      let inner: Document | null = null;
+      try {
+        inner = (element as HTMLIFrameElement).contentDocument;
+      } catch {
+        // Another site's frame.
+      }
+      if (inner?.body) {
+        visit(inner.body);
+      } else {
+        const title = element.getAttribute("title") ?? element.getAttribute("name") ?? "";
+        let host = "";
+        try {
+          host = new URL((element as HTMLIFrameElement).src, location.href).host;
+        } catch {
+          // No usable src.
+        }
+        push(`(frame${title ? ` ${quoted(clean(title, 60))}` : ""}${host ? ` from ${host}` : ""}: another site's content, which browser_* tools cannot read or reach; use browser_screenshot, or the cua_* window tools on the browser window)`);
+      }
+      return;
+    }
     const role = roleOf(element);
     if (role !== null && INTERACTIVE.has(role)) {
-      refs += 1;
-      const ref = `e${refs}`;
-      element.setAttribute(ATTRIBUTE, ref);
-      push(`[${ref}] ${role} ${quoted(clean(nameOf(element), 100))}${stateOf(element, role)}${hiddenFile ? " hidden" : ""}`);
+      const name = clean(nameOf(element), 100);
+      const ref = refFor(element, role, `${role} ${quoted(name)}`);
+      push(`[${ref}] ${role} ${quoted(name)}${stateOf(element, role)}${hiddenFile ? " hidden" : ""}`);
       if (role !== "listbox" && role !== "combobox") return;
       if (element.tagName === "SELECT") return;
     } else if (role === "heading") {
@@ -204,7 +296,7 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
         .filter((cell) => cell !== "");
       if (cells.length > 0) push(cells.join(" | "));
       return;
-    } else if (element.querySelector(SPECIAL) === null && element.shadowRoot === null) {
+    } else if (!CONTAINERS.has(element.tagName) && element.querySelector(SPECIAL) === null && element.shadowRoot === null) {
       const text = clean((element as HTMLElement).innerText, 500);
       if (text !== "") push(element.tagName === "LI" ? `- ${text}` : text);
       return;
@@ -214,7 +306,8 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
       for (const node of Array.from(parent.childNodes)) {
         if (node.nodeType === Node.TEXT_NODE) {
           const text = clean(node.textContent, 300);
-          if (text !== "") push(text);
+          // A combobox's own text is already its name.
+          if (text !== "" && !(role === "combobox" && text === clean(nameOf(element), 100))) push(text);
         } else if (node.nodeType === Node.ELEMENT_NODE) {
           visit(node as Element);
         }
@@ -222,43 +315,101 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
     }
   };
 
-  if (document.body !== null) visit(document.body);
+  let scopeRoot: Element | null = document.body;
+  if (options.scope === "main") {
+    scopeRoot = document.querySelector("main, [role=main]");
+  } else if (options.scope === "dialog") {
+    const dialogs = Array.from(document.querySelectorAll("dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]")).filter(isVisible);
+    scopeRoot = dialogs[dialogs.length - 1] ?? null;
+  } else if (options.scope !== null) {
+    scopeRoot = findRef(options.scope);
+  }
+  if (scopeRoot !== null) visit(scopeRoot);
 
+  // Refs of elements that are gone, hidden or changed (within what was read) expire.
+  for (const [ref, element] of scopeRoot === null ? [] : previous) {
+    if (seen.has(ref) || element.getAttribute(ATTRIBUTE) !== ref) continue;
+    if (options.scope !== null && scopeRoot !== null && !scopeRoot.contains(element)) continue;
+    element.removeAttribute(ATTRIBUTE);
+    element.removeAttribute(WAS);
+  }
+  document.documentElement.setAttribute(NEXT, String(next));
+
+  const empty = lines.length === 0 && options.scope === null;
   const header = [
     `Title: ${document.title}`,
     `URL: ${location.href}`,
     `Scroll: ${Math.round(scrollY)} of ${Math.max(0, document.documentElement.scrollHeight - innerHeight)} px`,
     "",
   ];
-  const query = options.query?.toLowerCase() ?? null;
-  const body = query === null ? lines : lines.filter((line) => line.toLowerCase().includes(query));
+  const query = options.query?.trim().toLowerCase() ?? null;
+  const refQuery = query !== null ? /^\[?(e\d+)\]?$/.exec(query)?.[1] : undefined;
+  let body: string[] = lines;
+  if (scopeRoot === null) {
+    body = [`(There is no ${options.scope === "main" || options.scope === "dialog" ? `${options.scope} region` : `element ${options.scope}`} on this page. Read without scope.)`];
+  } else if (empty) {
+    const elements = document.body?.getElementsByTagName("*").length ?? 0;
+    body = [
+      `(The page shows no content yet: readyState ${document.readyState}, ${elements} elements in the body, viewport ${innerWidth}×${innerHeight}, ${document.visibilityState}. It may still be loading: call browser_read with wait_for, or take a browser_screenshot.)`,
+    ];
+  } else if (refQuery !== undefined) {
+    body = lines.filter((line) => line.startsWith(`[${refQuery}] `));
+    if (body.length === 0) body = [`(No element has ref ${refQuery} now: it is gone or changed. Read again without query.)`];
+  } else if (query !== null && query !== "") {
+    body = lines.filter((line) => line.toLowerCase().includes(query));
+    if (body.length === 0) body = [`(No line contains ${quoted(options.query ?? "")}; the page has ${lines.length} lines. Try another word, or read without query.)`];
+  }
   const full = [...header, ...body].join("\n");
-  const start = Math.max(0, Math.min(options.offset, full.length));
+  const start = Math.max(0, options.offset);
+  const text =
+    start >= full.length && start > 0
+      ? `(Offset ${start} is past the end: this outline has ${full.length} characters. Read without offset, or use query or scope to find a part.)`
+      : full.slice(start, start + options.maxChars);
   const end = Math.min(full.length, start + options.maxChars);
-  return { text: full.slice(start, end), total: full.length, nextOffset: end < full.length ? end : null, refs };
+  return {
+    text,
+    total: full.length,
+    nextOffset: end < full.length ? end : null,
+    refs: seen.size,
+    next,
+    empty,
+    scopeMissing: scopeRoot === null,
+    ...(options.lines ? { lines } : {}),
+  };
 }
 
 export interface Located {
   found: boolean;
+  /** False when the element has no size: hidden, or a closed menu's item. */
+  visible: boolean;
   x: number;
   y: number;
   covered: string | null;
 }
 
-/** Scrolls the ref into view and returns its center in viewport CSS pixels. */
+/** Scrolls the ref into view and returns its center in the tab's viewport, in CSS pixels. */
 export function locateRef(ref: string): Located {
   const element = findRef(ref);
-  if (element === null) return { found: false, x: 0, y: 0, covered: null };
+  if (element === null) return { found: false, visible: false, x: 0, y: 0, covered: null };
   element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const rect = element.getBoundingClientRect();
-  const x = rect.left + rect.width / 2;
-  const y = rect.top + rect.height / 2;
-  const hit = document.elementFromPoint(x, y);
+  let x = rect.left + rect.width / 2;
+  let y = rect.top + rect.height / 2;
+  const hit = element.ownerDocument.elementFromPoint(x, y);
   const covered =
     hit === null || hit === element || element.contains(hit) || hit.contains(element)
       ? null
       : `${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ""}`;
-  return { found: true, x, y, covered };
+  // Inside same-origin frames, add each frame's offset to reach the tab's viewport.
+  let view: Window | null = element.ownerDocument.defaultView;
+  while (view !== null && view !== window && view.frameElement !== null) {
+    const frame = view.frameElement;
+    const box = frame.getBoundingClientRect();
+    x += box.left + frame.clientLeft;
+    y += box.top + frame.clientTop;
+    view = view.parent;
+  }
+  return { found: true, visible: rect.width > 0 && rect.height > 0, x, y, covered };
 }
 
 /** Clicks through the DOM; the fallback when trusted input is unavailable. */
@@ -283,9 +434,9 @@ export function focusRef(args: { ref: string; replace: boolean }): { found: bool
     if (isField) {
       field.select();
     } else {
-      const range = document.createRange();
+      const range = element.ownerDocument.createRange();
       range.selectNodeContents(element);
-      const selection = getSelection();
+      const selection = element.ownerDocument.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(range);
     }
@@ -316,7 +467,9 @@ export function setValue(args: { ref: string; text: string; replace: boolean }):
   if (element === null) return false;
   if (element.tagName === "INPUT" || element.tagName === "TEXTAREA") {
     const field = element as HTMLInputElement;
-    const prototype = element.tagName === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+    // The field's own realm: a frame has its own HTMLInputElement.
+    const realm = (element.ownerDocument.defaultView ?? window) as typeof window;
+    const prototype = element.tagName === "INPUT" ? realm.HTMLInputElement.prototype : realm.HTMLTextAreaElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
     const next = args.replace ? args.text : field.value + args.text;
     if (setter !== undefined) setter.call(field, next);
@@ -355,7 +508,8 @@ export function selectOption(args: { ref: string; option: string }): { found: bo
  * button). With no ref, the page's only file input. A string says why none.
  */
 export function fileInputFor(ref: string | null): HTMLInputElement | "stale" | "none" | "several" {
-  const isFile = (node: Element | null): node is HTMLInputElement => node instanceof HTMLInputElement && node.type === "file";
+  // Tag checks, not instanceof: an element in a frame belongs to that frame's realm.
+  const isFile = (node: Element | null): node is HTMLInputElement => node?.tagName === "INPUT" && (node as HTMLInputElement).type === "file";
   const inside = (roots: Array<Element | Document | ShadowRoot>): HTMLInputElement[] =>
     roots.flatMap((root) => Array.from(root.querySelectorAll("input")).filter(isFile));
   const pick = (found: HTMLInputElement[]) => (found.length === 1 ? found[0]! : found.length === 0 ? "none" : "several");
@@ -363,7 +517,10 @@ export function fileInputFor(ref: string | null): HTMLInputElement | "stale" | "
   const element = findRef(ref);
   if (element === null) return "stale";
   if (isFile(element)) return element;
-  if (element instanceof HTMLLabelElement && isFile(element.control)) return element.control;
+  if (element.tagName === "LABEL") {
+    const control = (element as HTMLLabelElement).control;
+    if (isFile(control)) return control;
+  }
   let node: Element | null = element;
   for (let depth = 0; node !== null && depth < 4; depth += 1, node = node.parentElement) {
     const found = inside(node.shadowRoot !== null ? [node, node.shadowRoot] : [node]);
@@ -381,6 +538,32 @@ export interface FileInputState {
 /** Called on a file input (`this`): whether it takes several files, and the names it holds. */
 export function fileInputState(this: HTMLInputElement): FileInputState {
   return { multiple: this.multiple, disabled: this.disabled, files: Array.from(this.files ?? []).map((file) => file.name) };
+}
+
+export interface FieldKind {
+  found: boolean;
+  kind: "select" | "check" | "text" | "file" | "other";
+  checked: boolean;
+}
+
+/** What filling a ref means: choosing an option, ticking a box, or typing. */
+export function fieldKind(ref: string): FieldKind {
+  const element = findRef(ref) as HTMLElement | null;
+  if (element === null) return { found: false, kind: "other", checked: false };
+  const input = element as HTMLInputElement;
+  if (element.tagName === "SELECT") return { found: true, kind: "select", checked: false };
+  if (element.tagName === "INPUT" && (input.type === "checkbox" || input.type === "radio")) {
+    return { found: true, kind: "check", checked: input.checked };
+  }
+  if (element.tagName === "INPUT" && input.type === "file") return { found: true, kind: "file", checked: false };
+  const role = element.getAttribute("role");
+  if (role === "checkbox" || role === "switch" || role === "radio" || role === "menuitemcheckbox") {
+    return { found: true, kind: "check", checked: element.getAttribute("aria-checked") === "true" };
+  }
+  if (element.tagName === "TEXTAREA" || element.tagName === "INPUT" || element.isContentEditable) {
+    return { found: true, kind: "text", checked: false };
+  }
+  return { found: true, kind: "other", checked: false };
 }
 
 /** Scrolls the page, or the ref into view. */

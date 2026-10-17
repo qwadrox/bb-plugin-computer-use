@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Smoother browser extension for agents.** Every `browser_*` action now
+  answers in plain text with the element it acted on, what it changed in the
+  page outline (or the new page's outline after a navigation), and the page's
+  URL, so agents read again much less. Refs stay with their element across
+  reads and actions while it is unchanged, and are never reused for another
+  element in the tab. Actions report alert, confirm and prompt dialogs, which
+  the new `browser_dialog` answers (calls on a frozen tab no longer hang),
+  tabs a link opened (kept in the background and in the Agent group), and a
+  file picker a click opened, which is held back and filled by
+  `browser_upload`. New `browser_hover` and `browser_fill` (a whole form in one
+  call), and `wait_for` on reads and actions. `browser_read` reads same-site
+  frames, takes `scope` (main region, open dialog, or a ref) and a ref as
+  `query`, and explains an empty page. Screenshots are at most 1280 px wide. A
+  tab showing another extension's popup answers `blocked_by_extension`, and
+  browser pages `restricted_page`, pointing agents to the window tools.
+- **Agent text from the driver is shorter and clearer.** Structured content
+  that repeats a result's text is left out. Shortened parameter descriptions
+  no longer stop at "e.g." or after a two-word sentence such as "Default
+  false.". `cua_run_steps` shows an example call. A browser's own permission
+  prompt (such as Chrome's "Allow remote debugging?") is no longer reported as
+  a missing macOS permission. Agents are told that `cua_browser_*` cannot
+  attach to Brave, and the skill opens with which tools fit which task.
 - **Uploads through the browser extension.** A new `browser_upload` tool
   attaches files from this machine to a page's file input, in Brave, Chrome,
   Edge or Chromium and in background tabs, without a file picker or drag and

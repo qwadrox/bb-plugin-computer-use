@@ -254,6 +254,24 @@ describe("parsePermissions / mapContent", () => {
     ]);
     expect(mapContent([], null)).toEqual([{ type: "text", text: "(empty result)" }]);
   });
+
+  it("leaves out structured content the text already says", () => {
+    const tree = "- AXWindow \"Calculator\"\n  - [3] AXButton \"7\"\n  - [4] AXButton \"8\"";
+    expect(mapContent([{ type: "text", text: tree }], { tree_markdown: tree, element_count: 2 })).toEqual([
+      { type: "text", text: tree },
+      { type: "text", text: 'structuredContent:\n{"element_count":2}' },
+    ]);
+    expect(mapContent([{ type: "text", text: tree }], { tree_markdown: tree })).toEqual([{ type: "text", text: tree }]);
+    // A text part that is the structured content as JSON.
+    expect(mapContent([{ type: "text", text: '{ "ok": true, "pid": 4 }' }], { ok: true, pid: 4 })).toEqual([
+      { type: "text", text: '{ "ok": true, "pid": 4 }' },
+    ]);
+    // Short strings stay: their key may be what tells them apart.
+    expect(mapContent([{ type: "text", text: "Clicked ok" }], { status: "ok" })).toEqual([
+      { type: "text", text: "Clicked ok" },
+      { type: "text", text: 'structuredContent:\n{"status":"ok"}' },
+    ]);
+  });
 });
 
 describe("cua host entry", () => {

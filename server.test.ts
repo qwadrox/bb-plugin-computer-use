@@ -639,6 +639,10 @@ describe("setup guidance", () => {
     expect(isPermissionFailure(failed("x", { refusal: { code: "tcc_accessibility" } }))).toBe(true);
     expect(isPermissionFailure(failed("refused (background_unavailable): act through its accessibility tree"))).toBe(false);
     expect(isPermissionFailure(failed("Permission denied (os error 13)"))).toBe(false);
+    expect(isPermissionFailure(failed("x", { refusal: { code: "permissions_pending" } }))).toBe(true);
+    // Chrome's "Allow remote debugging?" prompt is the browser's, not a macOS permission.
+    expect(isPermissionFailure(failed("browser_prepare refused: Chrome shows its Allow remote debugging? prompt", { refusal: { code: "remote_debugging_permission_required" } }))).toBe(false);
+    expect(isPermissionFailure(failed("refused (browser_permission_prompt): Chrome asks first"))).toBe(false);
   });
 });
 
@@ -717,7 +721,20 @@ describe("browser extension", () => {
 
   it("offers browser_* tools once turned on and relays calls to the thread's machine", async () => {
     const { harness, hostCalls } = await load({
-      browserReplies: [{ ok: true, browser: "Brave", result: { text: "# Inbox\n[e1] button \"Compose\"", total: 9000, nextOffset: 15000, refs: 1 } }],
+      browserReplies: [
+        { ok: true, browser: "Brave", result: { text: "# Inbox\n[e1] button \"Compose\"", total: 9000, nextOffset: 15000, refs: 1 } },
+        {
+          ok: true,
+          browser: "Brave",
+          result: {
+            target: '[e1] button "Compose"',
+            route: "trusted",
+            url: "https://mail.example.com/compose",
+            title: "Compose",
+            changes: { added: ['[e9] textbox "To"'], removed: [] },
+          },
+        },
+      ],
     });
     expect((await harness.behavior.runCli(["browser", "on"])).stdout).toMatch(/on/);
     const configuration = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
@@ -728,8 +745,9 @@ describe("browser extension", () => {
     const read = structured(await harness.behavior.callAgentTool("browser_read", { tab_id: 7, browser: "Brave" }));
     expect(text(read)).toBe('# Inbox\n[e1] button "Compose"\n\n(More: call browser_read with offset 15000.)');
     const clicked = structured(await harness.behavior.callAgentTool("browser_click", { tab_id: 7, ref: "e1" }));
-    expect(JSON.parse(text(clicked))).toMatchObject({ echoed: { method: "click", params: { tab_id: 7, ref: "e1" } } });
+    expect(text(clicked)).toBe('Clicked [e1] button "Compose"\n\nChanges:\n+ [e9] textbox "To"\n\nPage: Compose — https://mail.example.com/compose');
     expect(browserCalls(hostCalls)[0]).toEqual({ method: "read", params: { tab_id: 7 }, browser: "Brave" });
+    expect(browserCalls(hostCalls)[1]).toEqual({ method: "click", params: { tab_id: 7, ref: "e1" } });
     expect(hostCalls.filter((call) => call.method === "browserCall").every((call) => call.hostId === "host_9")).toBe(true);
   });
 
@@ -803,7 +821,7 @@ describe("browser extension", () => {
       arguments: expect.stringContaining("/tmp/a.csv"),
     });
     harness.behavior.submitInteraction(request.id, { allow: "once" });
-    expect(JSON.parse(text(structured(await upload)))).toEqual({ files: ["a.csv"] });
+    expect(text(structured(await upload))).toBe("The input holds a.csv.");
     expect(browserCalls(hostCalls)[1]).toEqual({ method: "upload", params: { tab_id: 2, ref: "e4", paths: ["/tmp/a.csv"] } });
 
     const old = harness.behavior.callAgentTool("browser_upload", { tab_id: 2, paths: ["/tmp/a.csv"] }, { threadId: "thr_1" });

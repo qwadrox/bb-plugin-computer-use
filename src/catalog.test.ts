@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { META_TOOLS, advertisedSchema, agentToolName, driverToolName, overridableSchema } from "./catalog.js";
 import { diffCatalogs, formatDrift, hasDrift, summarizeDrift } from "./drift.js";
-import { compactSchema, leadParagraph, normalizeDriverTool, normalizeDriverTools, type DriverTool } from "./driver-tools.js";
+import { compactSchema, firstSentence, leadParagraph, normalizeDriverTool, normalizeDriverTools, type DriverTool } from "./driver-tools.js";
 import { REVIEWED_TOOLS, defaultExposure, groupOf, normalizeOverrides, resolveExposure } from "./exposure.js";
 import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./snapshot.js";
 
@@ -52,23 +52,36 @@ describe("driver tools", () => {
   it("compacts prose but keeps every validation keyword", () => {
     const compacted = compactSchema({
       type: "object",
-      description: "First sentence. Second sentence with detail.",
+      description: "The first sentence, which is plenty long enough to stand alone. Second sentence with detail.",
       examples: [{ pid: 1 }],
       properties: {
-        description: { type: "string", description: "A property named description. More." },
+        description: { type: "string", description: "A property named description, long enough to stand on its own. More." },
         pid: { type: "integer", minimum: 1, description: "Process id." },
       },
       required: ["pid"],
     });
     expect(compacted).toEqual({
       type: "object",
-      description: "First sentence.",
+      description: "The first sentence, which is plenty long enough to stand alone.",
       properties: {
-        description: { type: "string", description: "A property named description." },
+        description: { type: "string", description: "A property named description, long enough to stand on its own." },
         pid: { type: "integer", minimum: 1, description: "Process id." },
       },
       required: ["pid"],
     });
+  });
+
+  it("cuts at a sentence's end, not at an abbreviation, and keeps what a short sentence needs", () => {
+    expect(firstSentence("Targets by role, e.g. button or link, and name. More detail follows here.")).toBe(
+      "Targets by role, e.g. button or link, and name. More detail follows here.",
+    );
+    expect(firstSentence("Default false. When true, the window is activated and the pointer may move. Other detail.")).toBe(
+      "Default false. When true, the window is activated and the pointer may move.",
+    );
+    expect(firstSentence("A sentence that is long enough to be the whole summary by itself. Then more.")).toBe(
+      "A sentence that is long enough to be the whole summary by itself.",
+    );
+    expect(firstSentence("x".repeat(300), 20)).toBe(`${"x".repeat(19)}…`);
   });
 
   it("normalizes raw tools/list entries and skips unusable ones", () => {

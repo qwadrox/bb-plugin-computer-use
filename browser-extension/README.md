@@ -27,7 +27,13 @@ agent ─▶ bb plugin server ─▶ host worker ─▶ Unix socket ─▶ bridg
   Clicks, typing and keys go through `chrome.debugger` as trusted input, so
   they work in background tabs. While attached, the browser shows its
   debugging bar; closing it pauses agents until you press **Resume** in the
-  popup. The debugger detaches after a minute of inactivity.
+  popup. The debugger detaches after a minute of inactivity (not while a
+  dialog it reported waits for an answer).
+- A ref stays with its element while the element is unchanged; refs are
+  never reused within a tab. Each action answers with the outline lines it
+  changed, and with any dialog, new tab or file picker it opened. A file
+  picker opened during an agent action is held back for `browser_upload`;
+  outside agent actions pickers open as usual.
 - A purple cursor glides to where an agent clicks, types or chooses an
   option, with a ripple on each click, and fades after five idle seconds. It
   is drawn in the page, outside `<body>` and in a closed shadow root, so it
@@ -57,7 +63,7 @@ to end in a throwaway headless Chromium profile.
 
 | Permission | Why |
 | --- | --- |
-| `debugger` | Trusted clicks, typing and keys, and screenshots, in background tabs |
+| `debugger` | Trusted clicks, hovers, typing and keys, screenshots, and answering a page's dialogs, in background tabs |
 | `nativeMessaging` | Talk to the bridge that bb installs on the same machine |
 | `tabs`, `tabGroups` | List and open tabs, and group the tabs agents open |
 | `storage` | Remember whether agents are paused and whether to show their cursor |
