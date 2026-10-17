@@ -7,7 +7,8 @@ from `npm run package --workspace browser-extension`.
 
 - **Category:** Developer Tools
 - **Language:** English
-- **Store icon:** `static/icons/icon-128.png`
+- **Store icon:** `store/store-icon-128.png` (the extension icon at 96x96 with
+  16 px transparent padding, as the image guidelines ask)
 - **Screenshots:** `store/screenshot-1280x800.png` and
   `store/screenshot-cursor-1280x800.png` (sources: the `.html` files beside
   them; render both with `node scripts/render-screenshot.mjs <chrome-headless-shell>`)
