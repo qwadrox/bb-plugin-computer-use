@@ -1,8 +1,9 @@
 # Desktop & Browser Agent for bb
 
-Lets [bb](https://getbb.app) agents use desktop apps and browsers on your
-machine, in the background, powered by [Cua Driver](https://cua.ai/docs) from
-Cua AI.
+Computer use for [bb](https://getbb.app) agents: they use desktop apps and
+browsers on your machine, in the background, powered by
+[Cua Driver](https://cua.ai/docs) from Cua AI. A Chrome extension lets them
+work in your own browser tabs too.
 
 A community plugin, not affiliated with or endorsed by Cua AI, Inc. or the bb
 team. See [NOTICE.md](NOTICE.md).
@@ -33,7 +34,7 @@ team. See [NOTICE.md](NOTICE.md).
 1. Install the plugin:
 
    ```sh
-   bb plugin install https://github.com/qwadrox/bb-plugin-computer-use
+   bb plugin install https://github.com/qwadrox/bb-plugin-desktop-browser-agent
    ```
 
 2. Open **Settings → Plugins → Desktop & Browser Agent**, select **Install Cua Driver…**

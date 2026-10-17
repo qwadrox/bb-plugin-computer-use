@@ -60,7 +60,7 @@ async function livePlugin(settings: Record<string, string | boolean> = {}) {
   };
   const handlers = hostEntry.handlers as unknown as Record<string, (input: unknown, context: unknown) => unknown>;
   const { bb, harness } = createFakePluginHost({
-    pluginId: "computer-use",
+    pluginId: "desktop-browser-agent",
     settings,
     agentSkillIds: ["desktop-browser-agent"],
     sdk: {

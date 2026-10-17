@@ -394,7 +394,7 @@ export function createCuaHostEntry(deps: HostDependencies) {
         emitConnection?.(false, reason);
       });
       try {
-        serverVersion = await next.initialize("bb-plugin-computer-use", PLUGIN_VERSION);
+        serverVersion = await next.initialize("bb-plugin-desktop-browser-agent", PLUGIN_VERSION);
         tools = await next.listTools();
       } catch (error) {
         const stderr = next.recentStderr;

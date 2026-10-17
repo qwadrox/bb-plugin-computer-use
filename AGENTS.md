@@ -1,6 +1,6 @@
 # AGENTS.md
 
-A bb plugin, Desktop & Browser Agent (id `computer-use`), that gives bb agents
+A bb plugin, Desktop & Browser Agent (id `desktop-browser-agent`), that gives bb agents
 Cua Driver desktop and browser control, plus an optional Chromium extension in
 `browser-extension/` (npm workspace).
 
@@ -18,7 +18,7 @@ npm run sync:tools     # refresh the tested driver snapshot and installer checks
 ```
 
 A local checkout runs in bb from its path: after a change, `npm run build`
-then `bb plugin reload computer-use`. Agent tools, skills and instructions
+then `bb plugin reload desktop-browser-agent`. Agent tools, skills and instructions
 change only in sessions that start afterwards.
 
 ## Where things live

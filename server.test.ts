@@ -89,7 +89,7 @@ async function load(options: {
 } = {}) {
   const hostCalls: Array<{ method: string; input: unknown; hostId: string }> = [];
   const { bb, harness } = createFakePluginHost({
-    pluginId: "computer-use",
+    pluginId: "desktop-browser-agent",
     settings: options.settings ?? {},
     agentSkillIds: ["desktop-browser-agent"],
     sdk: {
@@ -580,7 +580,7 @@ describe("setup guidance", () => {
 
     const blocked = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(blocked.isError).toBe(true);
-    expect(text(blocked)).toContain("[Open Desktop & Browser Agent settings](/settings/plugins/computer-use)");
+    expect(text(blocked)).toContain("[Open Desktop & Browser Agent settings](/settings/plugins/desktop-browser-agent)");
     expect(text(blocked)).toMatch(/Install Cua Driver/);
     expect(toolCalls()).toHaveLength(0);
   });
@@ -606,7 +606,7 @@ describe("setup guidance", () => {
     });
     const result = structured(await harness.behavior.callAgentTool("cua_click", { pid: 4, element_token: "s1:2" }));
     expect(result.isError).toBe(true);
-    expect(text(result)).toContain("[Open Desktop & Browser Agent settings](/settings/plugins/computer-use)");
+    expect(text(result)).toContain("[Open Desktop & Browser Agent settings](/settings/plugins/desktop-browser-agent)");
     expect(text(result)).toMatch(/Driver detail:.*permissions_pending/);
     expect(toolCalls()).toHaveLength(1);
     const lastCall = hostCalls.map((call) => call.method).lastIndexOf("callTool");
@@ -762,7 +762,7 @@ describe("browser extension", () => {
     await harness.behavior.runCli(["browser", "on"]);
     const setup = structured(await harness.behavior.callAgentTool("browser_tabs", {}));
     expect(setup.isError).toBe(true);
-    expect(text(setup)).toMatch(/Ask the user to open a browser with the Browser Bridge for bb extension.*\*\*Browser extension\*\* card of .*\/settings\/plugins\/computer-use/s);
+    expect(text(setup)).toMatch(/Ask the user to open a browser with the Browser Bridge for bb extension.*\*\*Browser extension\*\* card of .*\/settings\/plugins\/desktop-browser-agent/s);
     const refused = structured(await harness.behavior.callAgentTool("browser_read", { tab_id: 3 }));
     expect(text(refused)).toBe("browser_read failed (tab_not_shared): Tab 3 is not shared with agents.");
     const missing = structured(await harness.behavior.callAgentTool("browser_open", { url: "https://example.com" }));

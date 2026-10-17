@@ -112,5 +112,5 @@ bb cua call <tool> [<json-args>] [--host <id>]
 bb cua expose run_script call
 bb cua browser [status|install|uninstall|on|off] [--host <id>] [--json]
 bb cua browser call browser_tabs '{}'
-bb plugin config computer-use set browserTools false
+bb plugin config desktop-browser-agent set browserTools false
 ```

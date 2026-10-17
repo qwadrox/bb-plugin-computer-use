@@ -75,7 +75,7 @@ function listTools() {
       const init = await send("initialize", {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "bb-plugin-computer-use-sync", version: "0" },
+        clientInfo: { name: "bb-plugin-desktop-browser-agent-sync", version: "0" },
       });
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
       const tools = [];

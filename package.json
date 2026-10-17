@@ -1,5 +1,5 @@
 {
-  "name": "bb-plugin-computer-use",
+  "name": "bb-plugin-desktop-browser-agent",
   "version": "0.4.1",
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Desktop & Browser Agent",
-    "description": "Gives bb agents desktop and browser control, powered by Cua Driver from Cua AI, with per-provider routing.",
+    "description": "Computer use for bb agents: desktop apps and browser windows through Cua Driver from Cua AI, and your own Chrome, Edge or Brave tabs through a browser extension, with per-provider routing.",
     "branding": {
       "icon": "./icons/desktop-browser-agent.svg"
     },
@@ -45,16 +45,18 @@
     "typescript": "^5.7.0",
     "vitest": "^4.0.0"
   },
-  "description": "Desktop & Browser Agent for bb: background desktop and browser control on the thread's machine, powered by Cua Driver, with per-provider routing.",
+  "description": "Desktop & Browser Agent for bb: computer use in the background on the thread's machine, powered by Cua Driver, with a Chrome extension for your own browser tabs and per-provider routing.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/qwadrox/bb-plugin-computer-use.git"
+    "url": "git+https://github.com/qwadrox/bb-plugin-desktop-browser-agent.git"
   },
-  "homepage": "https://github.com/qwadrox/bb-plugin-computer-use#readme",
+  "homepage": "https://github.com/qwadrox/bb-plugin-desktop-browser-agent#readme",
   "keywords": [
     "bb-plugin",
     "computer-use",
+    "browser-automation",
+    "chrome-extension",
     "cua",
     "desktop-automation",
     "mcp"

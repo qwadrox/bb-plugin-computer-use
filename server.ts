@@ -71,7 +71,7 @@ const SKILL_NAME = "desktop-browser-agent";
 const REALTIME_CHANNEL = "state-changed";
 const SESSION_LABEL_MAX = 125;
 const STATUS_FRESH_MS = 30_000;
-const SETTINGS_PATH = "/settings/plugins/computer-use";
+const SETTINGS_PATH = "/settings/plugins/desktop-browser-agent";
 /** bb's limits: tool ids per selection, and bytes per kv value. */
 const SELECTION_MAX_IDS = 256;
 const KV_VALUE_MAX_BYTES = 256 * 1024;

@@ -5,7 +5,14 @@
 - **Agents see the plugin's name.** Their instructions open with "Desktop &
   Browser Agent", the skill is now `desktop-browser-agent` (was
   `cua-computer-use`), and `bb cua` and the package description use the name
-  too. The plugin id stays `computer-use`.
+  too.
+- **New plugin id `desktop-browser-agent`** (was `computer-use`), matching the
+  name, and the repository is now
+  `github.com/qwadrox/bb-plugin-desktop-browser-agent`. bb treats it as a new
+  plugin: remove `computer-use`, install this one, and set its settings again.
+  Settings live at `/settings/plugins/desktop-browser-agent`. The description
+  now says "computer use" and mentions the Chrome extension, so marketplace
+  searches find it.
 - **Smoother browser extension for agents.** Every `browser_*` action now
   answers in plain text with the element it acted on, what it changed in the
   page outline (or the new page's outline after a navigation), and the page's
