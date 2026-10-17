@@ -1,7 +1,8 @@
 # AGENTS.md
 
-A bb plugin (`computer-use`) that gives bb agents Cua Driver computer use,
-plus an optional Chromium extension in `browser-extension/` (npm workspace).
+A bb plugin, Desktop & Browser Agent (id `computer-use`), that gives bb agents
+Cua Driver desktop and browser control, plus an optional Chromium extension in
+`browser-extension/` (npm workspace).
 
 ## Commands
 
@@ -42,7 +43,7 @@ src/mcp-client.ts        MCP stdio JSON-RPC client
 src/browser-tools.ts     browser_* agent tools of the extension; params typed by browser-extension/src/shared.ts
 src/browser-host.ts      extension bridge: install, sockets, calls
 src/browser-bridge-script.ts  native messaging host the browser starts
-skills/cua-computer-use/ agent skill injected when the tools are offered
+skills/desktop-browser-agent/ agent skill injected when the tools are offered
 scripts/sync-driver-tools.mjs  npm run sync:tools: rewrites the snapshot and installer checksums
 icons/                   plugin icon (package.json branding)
 live.test.ts, browser.e2e.test.ts   opt-in: npm run test:live, npm run test:browser

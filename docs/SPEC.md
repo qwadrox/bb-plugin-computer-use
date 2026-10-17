@@ -42,7 +42,7 @@ Cua Driver is used.
 | FR-7 | Unique Cua session label per active thread run, beginning with `<prefix>-<threadId>`; end it on thread idle/failed/archived/deleted and issue a fresh label when work resumes. | done |
 | FR-8 | Return screenshots as image content the model can see; append `structuredContent` (element tokens) as text. | done |
 | FR-9 | `cua_status` and the settings UI report install, version, service, and macOS permission state per machine, with fix instructions. | done |
-| FR-10 | Inject the `cua-computer-use` skill and a readiness line into instructions when Cua tools are active. | done |
+| FR-10 | Inject the `desktop-browser-agent` skill and a readiness line into instructions when Cua tools are active. | done |
 | FR-11 | `bb cua` CLI for status, policy, mode, tool catalog, raw calls. | done |
 | FR-12 | Settings UI: mode radio, provider table with override selects, machine readiness with "Check", install/permission help. | done |
 | FR-13 | Live schema refresh: narrow advertised parameter schemas from the machine's `tools/list`. | done |
@@ -90,7 +90,7 @@ decision(provider) =
   else (prefer-native)        → provider ∈ NATIVE ? native : cua
 ```
 
-`configure()` returns `{ tools: enabledToolNames, skills: ["cua-computer-use"],
+`configure()` returns `{ tools: enabledToolNames, skills: ["desktop-browser-agent"],
 instructions }` for `cua`, and `{ tools: [], skills: [] }` otherwise. The
 selection is the meta tools plus every driver tool whose exposure is `tool`;
 group toggles turn browser or clipboard tools off, `cua_call` included.

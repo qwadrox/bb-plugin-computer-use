@@ -67,7 +67,7 @@ const OVERRIDES_KEY = "policy-overrides";
 const EXPOSURE_KEY = "tool-exposure";
 const STATUS_KEY_PREFIX = "driver-status:";
 const CATALOG_KEY_PREFIX = "catalog:";
-const SKILL_NAME = "cua-computer-use";
+const SKILL_NAME = "desktop-browser-agent";
 const REALTIME_CHANNEL = "state-changed";
 const SESSION_LABEL_MAX = 125;
 const STATUS_FRESH_MS = 30_000;
@@ -999,7 +999,7 @@ export default async function plugin(bb: BbPluginApi) {
     readCatalogIfStale(hostId);
     const drift = hostCatalogs.get(hostId)?.drift ?? null;
     const instructions = [
-      `Cua Driver computer use is available on ${context.host.name} through the cua_* tools.`,
+      `Desktop & Browser Agent gives you Cua Driver on ${context.host.name} through the cua_* tools.`,
       readinessLine(status),
     ];
     if (drift !== null && hasDrift(drift)) {
@@ -1016,7 +1016,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     instructions.push(
       `If a tool reports that setup is required, stop and give the user its ${SETTINGS_PATH} link instead of retrying.`,
-      "Follow the cua-computer-use skill: snapshot with cua_get_window_state before element actions, act with cua_run_steps, and verify afterwards.",
+      `Follow the ${SKILL_NAME} skill: snapshot with cua_get_window_state before element actions, act with cua_run_steps, and verify afterwards.`,
     );
     const browserTools = browserExtension ? BROWSER_TOOL_NAMES : [];
     if (browserTools.length > 0) {

@@ -1,9 +1,9 @@
 ---
-name: cua-computer-use
+name: desktop-browser-agent
 description: Drive native desktop apps and browser windows on the thread's machine through the cua_* tools (Cua Driver), and web pages in the user's own browser through the browser_* tools (Browser Bridge for bb extension). Use when the user asks to operate, automate, test, or inspect a real GUI application or web page (Outlook, Teams, a web app, a form, any desktop app), or when a task's outcome lives in a window or a tab rather than in files or a shell.
 ---
 
-# Computer use with Cua Driver
+# Desktop & Browser Agent
 
 The `cua_*` tools run on the machine that owns this thread's environment and
 act in the background by default: no focus steal, no cursor hijack. This skill

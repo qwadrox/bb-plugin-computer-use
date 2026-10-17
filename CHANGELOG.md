@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Agents see the plugin's name.** Their instructions open with "Desktop &
+  Browser Agent", the skill is now `desktop-browser-agent` (was
+  `cua-computer-use`), and `bb cua` and the package description use the name
+  too. The plugin id stays `computer-use`.
 - **Smoother browser extension for agents.** Every `browser_*` action now
   answers in plain text with the element it acted on, what it changed in the
   page outline (or the new page's outline after a navigation), and the page's

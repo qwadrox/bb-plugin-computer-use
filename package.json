@@ -45,7 +45,7 @@
     "typescript": "^5.7.0",
     "vitest": "^4.0.0"
   },
-  "description": "Computer use for bb agents, powered by Cua Driver: background desktop and browser control on the thread's machine, with per-provider routing.",
+  "description": "Desktop & Browser Agent for bb: background desktop and browser control on the thread's machine, powered by Cua Driver, with per-provider routing.",
   "license": "MIT",
   "repository": {
     "type": "git",

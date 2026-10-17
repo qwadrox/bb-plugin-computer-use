@@ -62,7 +62,7 @@ async function livePlugin(settings: Record<string, string | boolean> = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId: "computer-use",
     settings,
-    agentSkillIds: ["cua-computer-use"],
+    agentSkillIds: ["desktop-browser-agent"],
     sdk: {
       threads: { get: async () => ({ ...makeThreadResponse({ id: "thr_live" }), environmentId: "env_live" }) },
       environments: { get: async () => ({ id: "env_live", hostId: "this-mac" }) },

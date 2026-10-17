@@ -103,7 +103,7 @@ export function cuaCli(deps: CuaCliDeps): PluginCliRegistration {
 
   return {
     name: "cua",
-    summary: "Cua Driver computer use: readiness, tool exposure, routing policy, and raw tool calls",
+    summary: "Desktop & Browser Agent: Cua Driver readiness, tool exposure, routing policy, and raw tool calls",
     commands: [
       { name: "status", summary: "Show Cua Driver readiness, tested version, and drift for a machine", usage: "bb cua status [--host <id>] [--json]" },
       { name: "drift", summary: "Compare a machine's driver tools with the version this plugin was tested with", usage: "bb cua drift [--host <id>] [--json]" },

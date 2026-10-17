@@ -91,7 +91,7 @@ async function load(options: {
   const { bb, harness } = createFakePluginHost({
     pluginId: "computer-use",
     settings: options.settings ?? {},
-    agentSkillIds: ["cua-computer-use"],
+    agentSkillIds: ["desktop-browser-agent"],
     sdk: {
       threads: { get: async () => ({ ...makeThreadResponse({ id: "thr_1" }), environmentId: "env_1" }) },
       environments: { get: async () => ({ id: "env_1", hostId: "host_9" }) },
@@ -164,7 +164,7 @@ describe("routing", () => {
     const { harness } = await load();
     const claude = await harness.behavior.resolveAgentConfiguration(context("claude-code"));
     expect(names(claude)).toEqual(expect.arrayContaining(["cua_call", "cua_describe", "cua_status", "cua_run_steps", "cua_get_window_state", "cua_browser_click"]));
-    expect(claude.skills).toEqual(["cua-computer-use"]);
+    expect(claude.skills).toEqual(["desktop-browser-agent"]);
     expect(claude.instructions).toMatch(/cua_describe lists every tool/);
 
     const codex = await harness.behavior.resolveAgentConfiguration(context("codex"));

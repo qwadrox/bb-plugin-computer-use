@@ -13,7 +13,7 @@ Cua AI, Inc.
   upstream runtime this plugin integrates. The plugin icon
   (`icons/desktop-browser-agent.svg`, a single-colour glyph) is original work of this project and uses
   no Cua or bb artwork. Earlier versions used a logo derived from Cua's.
-- The agent skill in `skills/cua-computer-use/SKILL.md` is adapted from the
+- The agent skill in `skills/desktop-browser-agent/SKILL.md` is adapted from the
   upstream Cua Driver skill pack (`libs/cua-driver/rust/Skills/cua-driver/`,
   MIT). Sections on the snapshot-before-action invariant, the
   verify-then-escalate ladder, and the pitfalls list are condensed from that

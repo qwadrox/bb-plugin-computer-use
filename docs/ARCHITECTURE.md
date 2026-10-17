@@ -134,7 +134,7 @@ flowchart TD
   O -- yes --> D[decision = override]
   O -- no --> M{mode}
   M -- off --> OFF[tools: none]
-  M -- cua-everywhere --> CUA[tools: meta + exposure tool<br/>skill: cua-computer-use<br/>instructions: readiness + drift lines]
+  M -- cua-everywhere --> CUA[tools: meta + exposure tool<br/>skill: desktop-browser-agent<br/>instructions: readiness + drift lines]
   M -- prefer-native --> N{provider has native computer use?}
   N -- yes (codex) --> OFF
   N -- no --> CUA

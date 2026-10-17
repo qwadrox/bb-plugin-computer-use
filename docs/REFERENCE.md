@@ -10,7 +10,7 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 | Exposure policy | Every driver tool is a dedicated tool, reachable only through `cua_call`, or off. Code execution (`run_script`), `kill_app`, recording, driver configuration and extension installs start off. A tool new to this plugin is reachable through `cua_call` if the driver marks it read-only, and off otherwise. `cua_call` obeys the same policy. |
 | Drift report | The plugin compares each machine's driver with the one it was tested with and names new, removed and changed tools in `bb cua status`, `bb cua drift`, the settings page, and one line in agent instructions. |
 | Pinned installs | Install and update target the tested driver by default. The plugin downloads that release's installer files from GitHub and runs them only if each matches a checksum recorded in this repo. The newest release is a separate, explicitly untested choice. |
-| Agent skill | `cua-computer-use`: the upstream Cua Driver 0.36 loop (narrow reads, `run_steps` with `observe`, verify at checkpoints) plus bb rules: what to do when a tool is off, and when to stop and ask before sending or deleting. |
+| Agent skill | `desktop-browser-agent`: the upstream Cua Driver 0.36 loop (narrow reads, `run_steps` with `observe`, verify at checkpoints) plus bb rules: what to do when a tool is off, and when to stop and ask before sending or deleting. |
 | Settings UI | Routing mode, per-provider overrides, an **Agent tools** card with per-tool exposure, a setup checklist per machine with install, permission and drift state, and a **Browser extension** card (the `browser_*` switch and each machine's bridge). A sensitive call that needs your answer shows the approval card in its thread (see [Permissions and safety](#permissions-and-safety)). |
 | Browser extension (optional) | **Browser Bridge for bb**, a Chromium extension in this repo. Off by default. When you turn it on, agents get `browser_*` tools that work in the tabs of your everyday browser (Brave, Chrome, Edge, Chromium), in background tabs, while you keep browsing. See [Browser extension](#browser-extension-optional). |
 | CLI | `bb cua status`, `drift`, `tools`, `expose`, `call`, `policy`, `mode`, `install`, `update`, `grant`, `browser`. |
@@ -252,7 +252,7 @@ Accessibility and Screen Recording; approve both and fully relaunch
 also appear on the first screenshot. The CLI equivalents are `bb cua install --yes` and
 `bb cua grant`; `install` refuses to run without `--yes`.
 
-Before each computer-use action, the plugin checks a recent readiness snapshot.
+Before each Cua Driver action, the plugin checks a recent readiness snapshot.
 If the driver or a required macOS permission is missing, it stops before the
 action and returns a direct link to **Settings → Plugins → Desktop & Browser Agent** with
 the exact recovery step. Permission failures returned later by Cua Driver are
