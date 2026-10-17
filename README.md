@@ -81,6 +81,8 @@ for Electron apps and for browsers without the extension.
 
 ## Browser extension (optional)
 
+![An agent filling in a sign-up form through the extension, with its cursor](docs/screenshots/browser-extension-demo.gif)
+
 Off until you turn it on:
 
 1. In **Settings → Plugins → Desktop & Browser Agent → Browser extension**, tick **Offer
