@@ -116,6 +116,8 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
     if (element.tagName === "INPUT") {
       const input = element as HTMLInputElement;
       if (["button", "submit", "reset"].includes(input.type)) return input.value;
+      // A dropzone's file input is usually unlabelled: the text around it says what it takes.
+      if (input.type === "file") return input.title || input.name || (input.parentElement?.innerText ?? "");
       return input.placeholder || input.title || input.name || "";
     }
     if (element.tagName === "TEXTAREA") {
@@ -137,7 +139,12 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
         if (input.checked) parts.push("checked");
       } else if (input.type === "password") {
         if (input.value !== "") parts.push("value=(hidden)");
-      } else if (input.type !== "file" && input.value !== "") {
+      } else if (input.type === "file") {
+        if (input.accept !== "") parts.push(`accept=${quoted(clean(input.accept, 80))}`);
+        if (input.multiple) parts.push("multiple");
+        const names = Array.from(input.files ?? []).map((file) => file.name);
+        if (names.length > 0) parts.push(`files=${quoted(clean(names.join(", "), 120))}`);
+      } else if (input.value !== "") {
         parts.push(`value=${quoted(clean(input.value, 120))}`);
       }
       if (input.disabled) parts.push("disabled");
@@ -176,13 +183,15 @@ export function snapshotPage(options: SnapshotOptions): SnapshotResult {
 
   const visit = (element: Element): void => {
     if (lines.length >= MAX_LINES || SKIP.has(element.tagName.toUpperCase())) return;
-    if (!isVisible(element)) return;
+    // Dropzones and upload buttons hide their file input; list it anyway, so browser_upload has a ref.
+    const hiddenFile = !isVisible(element) && element.tagName === "INPUT" && (element as HTMLInputElement).type === "file";
+    if (!hiddenFile && !isVisible(element)) return;
     const role = roleOf(element);
     if (role !== null && INTERACTIVE.has(role)) {
       refs += 1;
       const ref = `e${refs}`;
       element.setAttribute(ATTRIBUTE, ref);
-      push(`[${ref}] ${role} ${quoted(clean(nameOf(element), 100))}${stateOf(element, role)}`);
+      push(`[${ref}] ${role} ${quoted(clean(nameOf(element), 100))}${stateOf(element, role)}${hiddenFile ? " hidden" : ""}`);
       if (role !== "listbox" && role !== "combobox") return;
       if (element.tagName === "SELECT") return;
     } else if (role === "heading") {
@@ -338,6 +347,40 @@ export function selectOption(args: { ref: string; option: string }): { found: bo
   select.dispatchEvent(new Event("input", { bubbles: true }));
   select.dispatchEvent(new Event("change", { bubbles: true }));
   return { found: true, chosen: match.text.trim(), options: [] };
+}
+
+/**
+ * The file input a ref stands for: the ref itself, the control of a label, or
+ * the one inside the ref or its nearest ancestors (a dropzone, an Upload
+ * button). With no ref, the page's only file input. A string says why none.
+ */
+export function fileInputFor(ref: string | null): HTMLInputElement | "stale" | "none" | "several" {
+  const isFile = (node: Element | null): node is HTMLInputElement => node instanceof HTMLInputElement && node.type === "file";
+  const inside = (roots: Array<Element | Document | ShadowRoot>): HTMLInputElement[] =>
+    roots.flatMap((root) => Array.from(root.querySelectorAll("input")).filter(isFile));
+  const pick = (found: HTMLInputElement[]) => (found.length === 1 ? found[0]! : found.length === 0 ? "none" : "several");
+  if (ref === null) return pick(inside(pageRoots()));
+  const element = findRef(ref);
+  if (element === null) return "stale";
+  if (isFile(element)) return element;
+  if (element instanceof HTMLLabelElement && isFile(element.control)) return element.control;
+  let node: Element | null = element;
+  for (let depth = 0; node !== null && depth < 4; depth += 1, node = node.parentElement) {
+    const found = inside(node.shadowRoot !== null ? [node, node.shadowRoot] : [node]);
+    if (found.length > 0) return pick(found);
+  }
+  return "none";
+}
+
+export interface FileInputState {
+  multiple: boolean;
+  disabled: boolean;
+  files: string[];
+}
+
+/** Called on a file input (`this`): whether it takes several files, and the names it holds. */
+export function fileInputState(this: HTMLInputElement): FileInputState {
+  return { multiple: this.multiple, disabled: this.disabled, files: Array.from(this.files ?? []).map((file) => file.name) };
 }
 
 /** Scrolls the page, or the ref into view. */

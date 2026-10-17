@@ -126,6 +126,19 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     labels: { pending: "Taking a screenshot", completed: "Took a screenshot" },
   },
   {
+    name: "browser_upload",
+    method: "upload",
+    description:
+      "Attach files from this machine to a file input in a tab, as choosing them in the file picker would; no picker opens and nothing needs dragging. ref is the input's `file` line from browser_read (hidden inputs behind dropzones are listed too) or the dropzone or button around it; without ref the page's only file input is used. Returns the file names the input now holds.",
+    parameters: z.object({
+      tab_id: tabId,
+      ref: ref.optional(),
+      paths: z.array(z.string().min(1)).min(1).describe("Absolute paths of the files on the machine the browser runs on"),
+      browser,
+    }) satisfies z.ZodType<BridgeParams["upload"]>,
+    labels: { pending: "Attaching files", completed: "Attached files" },
+  },
+  {
     name: "browser_close",
     method: "close",
     description: "Close a tab, for example one this agent opened and no longer needs.",
@@ -160,6 +173,12 @@ export function browserToolResult(tool: BrowserTool, reply: BrowserCallResult, s
   if (!reply.ok) {
     if (SETUP_CODES.has(reply.code)) {
       return text(`${reply.message}\n\n${setupStep(reply.code, settingsPath)} Do not work around it with other browser tools unless the user says so.`, true);
+    }
+    if (reply.code === "unknown_method") {
+      return text(
+        `${tool.name} needs a newer Browser Bridge for bb than the one in this browser. Ask the user to update it: **Update** on the browser's extensions page (with Developer mode on) for a Web Store install, or \`npm run build:extension\` and **Reload** for an unpacked build.`,
+        true,
+      );
     }
     return text(`${tool.name} failed (${reply.code}): ${reply.message}`, true);
   }

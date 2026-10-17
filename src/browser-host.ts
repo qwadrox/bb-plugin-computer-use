@@ -1,6 +1,6 @@
 import { connect } from "node:net";
-import { access, chmod, mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { access, chmod, mkdir, readFile, readdir, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { BRIDGE_SCRIPT } from "./browser-bridge-script.js";
 import type { HostErrorCode } from "../browser-extension/src/shared.js";
 import type { BrowserBridgeState, BrowserCallResult } from "./contract.js";
@@ -209,6 +209,18 @@ export async function bridgeState(layout: BridgeLayout, runtime: string): Promis
   return { supported: layout.supported, installed, browsers, connections };
 }
 
+/** Why the paths of an upload cannot be sent, or null when each is an absolute path to a file here. */
+async function missingUpload(paths: unknown): Promise<string | null> {
+  if (!Array.isArray(paths)) return null;
+  for (const path of paths) {
+    if (typeof path !== "string" || !isAbsolute(path)) return `${String(path)} is not an absolute path.`;
+    const found = await stat(path).catch(() => null);
+    if (found === null) return `${path} does not exist on this machine.`;
+    if (!found.isFile()) return `${path} is not a file.`;
+  }
+  return null;
+}
+
 /** Sends one method to the extension in the chosen (or only) connected browser. */
 export async function callBrowser(
   layout: BridgeLayout,
@@ -242,6 +254,10 @@ export async function callBrowser(
       "several_browsers",
       `Several browsers are connected (${live.map((entry) => entry.hello.browser).join(", ")}). Pass browser to choose one.`,
     );
+  }
+  if (method === "upload") {
+    const missing = await missingUpload(params.paths);
+    if (missing !== null) return fail("no_such_file", missing);
   }
   const target = matches[0]!;
   try {

@@ -932,6 +932,12 @@ export default async function plugin(bb: BbPluginApi) {
     reason:
       "work in the tabs of your own signed-in browser, through the Browser Bridge for bb extension. One answer covers every browser_* tool in this thread",
   };
+  // An upload sends local files to a website, so it asks on its own, like cua_browser_set_input_files.
+  const BROWSER_UPLOAD_ACTION = {
+    key: "browser_upload",
+    title: "Allow file uploads in your browser?",
+    reason: "upload files from this machine to a web page in your browser, through the Browser Bridge for bb extension",
+  };
 
   /** One browser_* call: the setting, the approval, then the extension on the thread's machine. */
   async function callBrowserTool(
@@ -945,7 +951,8 @@ export default async function plugin(bb: BbPluginApi) {
         `The browser extension is turned off. Do not reach the same capability another way; if the task needs it, ask the user to turn on **Offer \`browser_*\` tools (extension)** in the **Browser extension** card of [Desktop & Browser Agent settings](${SETTINGS_PATH}).`,
       );
     }
-    const refusal = await approvalRefusal(tool.name, args, options, BROWSER_ACTION, tool.name);
+    const action = tool.method === "upload" ? BROWSER_UPLOAD_ACTION : BROWSER_ACTION;
+    const refusal = await approvalRefusal(tool.name, args, options, action, tool.name);
     if (refusal !== null) return refusal;
     const { browser, ...params } = args;
     const reply = await host.call(
@@ -1013,7 +1020,7 @@ export default async function plugin(bb: BbPluginApi) {
     const browserTools = browserExtension ? BROWSER_TOOL_NAMES : [];
     if (browserTools.length > 0) {
       instructions.push(
-        "For web pages in the user's own browser, prefer the browser_* tools (Browser Bridge for bb extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref. If one reports that setup is needed, tell the user instead of switching to cua_* tools.",
+        "For web pages in the user's own browser, prefer the browser_* tools (Browser Bridge for bb extension) over cua_* browser and desktop tools: they work in background tabs while the user keeps using the browser. Start with browser_tabs or browser_open, read with browser_read, and act by ref. To upload a file, call browser_upload with its path instead of asking the user to pick or drag it. If one reports that setup is needed, tell the user instead of switching to cua_* tools.",
       );
     }
     return {

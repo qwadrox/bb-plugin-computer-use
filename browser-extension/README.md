@@ -62,13 +62,15 @@ to end in a throwaway headless Chromium profile.
 | `tabs`, `tabGroups` | List and open tabs, and group the tabs agents open |
 | `storage` | Remember whether agents are paused and whether to show their cursor |
 | `alarms` | Reconnect to the bridge after bb or the browser restarts |
+| `file:///*` host access | Attach a file an agent uploads to a page's file input. The browser allows it only once you turn on **Allow access to file URLs**; the extension never opens or reads `file://` pages |
 
 **Privacy.** The extension makes no network requests of its own, has no
 analytics, and collects nothing for its developer. It hands page text, tab
 titles and URLs, and screenshots only to the bb agent on the same computer
 that asked for them, through the local bridge. That agent is a coding agent
 the user runs, and it sends what it reads to the AI model provider the user
-chose in bb (such as Anthropic or OpenAI), under that provider's terms. Data
+chose in bb (such as Anthropic or OpenAI), under that provider's terms. A file
+an agent uploads goes only to the page whose file input it fills. Data
 is not sold or used for anything but the agent's task. **Pause agents** in
 the popup stops all access.
 

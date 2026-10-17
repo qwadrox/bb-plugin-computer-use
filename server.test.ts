@@ -780,6 +780,39 @@ describe("browser extension", () => {
     expect(browserCalls(hostCalls)).toHaveLength(2);
   });
 
+  it("asks on its own before a browser upload, and explains an extension too old for it", async () => {
+    const { harness, hostCalls } = await load({
+      settings: { confirmSensitiveTools: true },
+      browserReplies: [
+        { ok: true, browser: "Brave", result: { tabs: [] } },
+        { ok: true, browser: "Brave", result: { files: ["a.csv"] } },
+        { ok: false, code: "unknown_method", message: "Unknown method upload." },
+      ],
+    });
+    await harness.behavior.runCli(["browser", "on"]);
+    const tabs = harness.behavior.callAgentTool("browser_tabs", {}, { threadId: "thr_1" });
+    harness.behavior.submitInteraction((await asked(harness)).id, { allow: "thread" });
+    await tabs;
+
+    const upload = harness.behavior.callAgentTool("browser_upload", { tab_id: 2, ref: "e4", paths: ["/tmp/a.csv"] }, { threadId: "thr_1" });
+    const request = await asked(harness);
+    expect(request).toMatchObject({ title: "Allow file uploads in your browser?" });
+    expect(request.payload).toMatchObject({
+      shownName: "browser_upload",
+      reason: expect.stringMatching(/upload files from this machine/),
+      arguments: expect.stringContaining("/tmp/a.csv"),
+    });
+    harness.behavior.submitInteraction(request.id, { allow: "once" });
+    expect(JSON.parse(text(structured(await upload)))).toEqual({ files: ["a.csv"] });
+    expect(browserCalls(hostCalls)[1]).toEqual({ method: "upload", params: { tab_id: 2, ref: "e4", paths: ["/tmp/a.csv"] } });
+
+    const old = harness.behavior.callAgentTool("browser_upload", { tab_id: 2, paths: ["/tmp/a.csv"] }, { threadId: "thr_1" });
+    harness.behavior.submitInteraction((await asked(harness)).id, { allow: "once" });
+    const refused = structured(await old);
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toMatch(/^browser_upload needs a newer Browser Bridge for bb/);
+  });
+
   it("shows and changes the bridge from the app", async () => {
     const { harness, hostCalls } = await load();
     const view = (await harness.behavior.callRpc("browserState", null)) as {

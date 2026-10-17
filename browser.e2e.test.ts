@@ -8,7 +8,7 @@
  * It uses a throwaway profile, so no installed browser is touched.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +32,15 @@ const FORM = `<!doctype html><title>Form</title>
 <a href="/second">Next page</a>
 <div style="height:3000px"></div>`;
 const SECOND = `<!doctype html><title>Second</title><p>Second page</p>`;
+// A dropzone the way upload libraries build one: the file input inside it is hidden.
+const UPLOAD = `<!doctype html><title>Upload</title>
+<div id="drop" role="presentation" tabindex="0" style="border:2px dashed;padding:40px">
+  <input type="file" accept=".csv" multiple style="display:none"
+    onchange="Promise.all([...this.files].map((file) => file.text().then((text) => file.name + ': ' + text.trim()))).then((parts) => { document.getElementById('got').textContent = 'Got ' + parts.join(' | '); })">
+  <p>Click or drag CSV files here</p>
+</div>
+<p id="got"></p>
+<label for="avatar">Avatar</label><input type="file" id="avatar">`;
 
 function refFor(text: string, pattern: RegExp): string {
   const line = text.split("\n").find((entry) => pattern.test(entry));
@@ -68,7 +77,7 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
 
     server = createServer((request, response) => {
       response.setHeader("content-type", "text/html");
-      response.end(request.url === "/second" ? SECOND : FORM);
+      response.end(request.url === "/second" ? SECOND : request.url === "/upload" ? UPLOAD : FORM);
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -147,6 +156,30 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
     const reply = await callBrowser(layout, "screenshot", { tab_id: tabId }, { timeoutMs: 30_000 });
     if (reply.ok) expect((reply.result as { data: string }).data.length).toBeGreaterThan(1000);
     else expect(reply.code).toBe("not_rendered");
+  });
+
+  it("uploads files into a hidden file input behind a dropzone", async () => {
+    const csv = join(work, "erste.csv");
+    writeFileSync(csv, "date,amount\n2026-01-02,-300\n");
+    const other = join(work, "notes.csv");
+    writeFileSync(other, "x\n");
+    const uploadTab = (await call("open", { url: `${base}/upload` })).tab_id as number;
+    const page = (await call("read", { tab_id: uploadTab })).text as string;
+    expect(page).toMatch(/\[e\d+\] file "Click or drag CSV files here" accept="\.csv" multiple hidden/);
+    const ref = refFor(page, /file "Click or drag/);
+
+    const uploaded = await call("upload", { tab_id: uploadTab, ref, paths: [csv, other] });
+    expect(uploaded.files).toEqual(["erste.csv", "notes.csv"]);
+    const got = (await call("read", { tab_id: uploadTab, query: "Got" })).text as string;
+    expect(got).toContain("Got erste.csv: date,amount 2026-01-02,-300 | notes.csv: x");
+    expect((await call("read", { tab_id: uploadTab, query: "Click or drag" })).text).toContain('files="erste.csv, notes.csv"');
+
+    // The label's ref finds its input; that one takes a single file.
+    const avatar = refFor(page, /file "Avatar"/);
+    await expect(call("upload", { tab_id: uploadTab, ref: avatar, paths: [csv, other] })).rejects.toThrow(/invalid_arguments: That file input takes one file/);
+    await expect(call("upload", { tab_id: uploadTab, paths: [csv] })).rejects.toThrow(/no_file_input: The page has several file inputs/);
+    await expect(call("upload", { tab_id: uploadTab, ref, paths: [join(work, "missing.csv")] })).rejects.toThrow(/no_such_file: .*does not exist/);
+    await call("close", { tab_id: uploadTab });
   });
 
   it("refuses closed tabs and closes its own", async () => {

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Uploads through the browser extension.** A new `browser_upload` tool
+  attaches files from this machine to a page's file input, in Brave, Chrome,
+  Edge or Chromium and in background tabs, without a file picker or drag and
+  drop. `browser_read` now lists file inputs, the hidden one behind a dropzone
+  included, with what they accept and the files they hold. The extension
+  (v0.2.0) asks for `file:///*` access so its **Allow access to file URLs**
+  switch appears; a Web Store install needs that switch turned on once, and
+  the agent's error links to it. With **Ask before sensitive actions** on,
+  each upload asks with its paths. An extension too old for a tool now says
+  to update it.
 - **Clearer wording in agent messages, approval cards and `bb cua browser`.**
   Refusals name the **Agent tools** card and the **Offer `browser_*` tools
   (extension)** switch. Approval cards no longer repeat the tool name in their

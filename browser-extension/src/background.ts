@@ -1,5 +1,7 @@
 import {
   domClick,
+  fileInputFor,
+  fileInputState,
   findRef,
   focusRef,
   hideCursor,
@@ -11,6 +13,7 @@ import {
   selectOption,
   setValue,
   snapshotPage,
+  type FileInputState,
   type Located,
   type SnapshotResult,
 } from "./page.js";
@@ -282,24 +285,30 @@ async function worldOf(tabId: number): Promise<World> {
   return entry;
 }
 
-async function evaluateIn<T>(tabId: number, expression: string): Promise<T> {
+/** What Runtime.evaluate and Runtime.callFunctionOn answer: a value, or a handle on a page object. */
+interface RemoteResult {
+  value?: unknown;
+  objectId?: string;
+}
+
+async function evaluateIn(tabId: number, expression: string, returnByValue: boolean): Promise<RemoteResult> {
   const world = await worldOf(tabId);
   const response = await cdp<{
-    result: { value?: unknown };
+    result: RemoteResult;
     exceptionDetails?: { text: string; exception?: { description?: string } };
   }>(tabId, "Runtime.evaluate", {
     expression,
     contextId: world.contextId,
-    returnByValue: true,
+    returnByValue,
     awaitPromise: true,
   });
   if (response.exceptionDetails !== undefined) {
     throw new BridgeError("page_error", response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
   }
-  return response.result.value as T;
+  return response.result;
 }
 
-async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg?: unknown): Promise<T> {
+async function run(tabId: number, fn: (...args: never[]) => unknown, arg: unknown, returnByValue: boolean): Promise<RemoteResult> {
   await attach(tabId);
   // The page helpers are defined ahead of fn, which may call them (see page.ts).
   const expression = `(() => {
@@ -308,13 +317,32 @@ async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg
     return (${fn.toString()})(${arg === undefined ? "" : JSON.stringify(arg)});
   })()`;
   try {
-    return await evaluateIn<T>(tabId, expression);
+    return await evaluateIn(tabId, expression, returnByValue);
   } catch (error) {
     // The context was destroyed by a navigation the cache has not seen yet: make a fresh world and try once more.
     if (error instanceof BridgeError || !(error instanceof Error) || !/Cannot find context/i.test(error.message)) throw error;
     worlds.delete(tabId);
-    return evaluateIn<T>(tabId, expression);
+    return evaluateIn(tabId, expression, returnByValue);
   }
+}
+
+async function evaluate<T>(tabId: number, fn: (...args: never[]) => unknown, arg?: unknown): Promise<T> {
+  return (await run(tabId, fn, arg, true)).value as T;
+}
+
+/** Like evaluate, but an object result comes back as a handle; release it with Runtime.releaseObject. */
+function evaluateHandle(tabId: number, fn: (...args: never[]) => unknown, arg?: unknown): Promise<RemoteResult> {
+  return run(tabId, fn, arg, false);
+}
+
+/** Calls fn with a page object from evaluateHandle as `this`. */
+async function callOn<T>(tabId: number, objectId: string, fn: (this: never) => unknown): Promise<T> {
+  const response = await cdp<{ result: RemoteResult }>(tabId, "Runtime.callFunctionOn", {
+    objectId,
+    functionDeclaration: fn.toString(),
+    returnByValue: true,
+  });
+  return response.result.value as T;
 }
 
 async function waitForLoad(tabId: number): Promise<void> {
@@ -346,6 +374,16 @@ async function pointAt(tabId: number, ref: string): Promise<void> {
   if (!(await readSettings()).cursor) return;
   const located = await evaluate<Located>(tabId, locateRef, ref).catch(() => null);
   if (located?.found === true) await showCursor(tabId, located, false);
+}
+
+/** The browser lets an extension hand files to a page only with the user's "Allow access to file URLs". */
+function noFileAccess(): BridgeError {
+  const browser = browserName();
+  const scheme = browser === "Brave" ? "brave" : browser === "Edge" ? "edge" : "chrome";
+  return new BridgeError(
+    "no_file_access",
+    `${browser} does not let Browser Bridge for bb read files yet. Ask the user to open ${scheme}://extensions/?id=${chrome.runtime.id} in ${browser}, turn on **Allow access to file URLs**, and tell you when it is on; then call browser_upload again.`,
+  );
 }
 
 function staleRef(ref: string): BridgeError {
@@ -585,6 +623,41 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
       const tabId = await allowedTab(params.tab_id);
       await chrome.tabs.remove(tabId);
       return { closed: tabId };
+    }
+    case "upload": {
+      const tabId = await allowedTab(params.tab_id);
+      const paths: unknown = params.paths;
+      if (!Array.isArray(paths) || paths.length === 0 || !paths.every((path) => typeof path === "string" && path !== "")) {
+        throw new BridgeError("invalid_arguments", "paths must list one or more absolute file paths.");
+      }
+      if (!(await chrome.extension.isAllowedFileSchemeAccess())) throw noFileAccess();
+      const ref = typeof params.ref === "string" && params.ref !== "" ? params.ref : null;
+      const input = await evaluateHandle(tabId, fileInputFor, ref);
+      if (input.objectId === undefined) {
+        if (input.value === "stale" && ref !== null) throw staleRef(ref);
+        throw new BridgeError(
+          "no_file_input",
+          input.value === "several"
+            ? `${ref === null ? "The page" : `Ref ${ref}`} has several file inputs. Pass the ref of the one you want: browser_read lists them as file lines, hidden ones too.`
+            : `${ref === null ? "The page has no file input" : `There is no file input at or around ref ${ref}`}. Open the page's upload step or dialog first, read again, and pass the ref of its file line.`,
+        );
+      }
+      const objectId = input.objectId;
+      try {
+        const before = await callOn<FileInputState>(tabId, objectId, fileInputState);
+        if (before.disabled) throw new BridgeError("no_file_input", "That file input is disabled.");
+        if (!before.multiple && paths.length > 1) {
+          throw new BridgeError("invalid_arguments", "That file input takes one file. Upload them one at a time, or find an input marked multiple.");
+        }
+        await cdp(tabId, "DOM.setFileInputFiles", { files: paths, objectId }).catch((error: unknown) => {
+          if (error instanceof Error && /not allowed/i.test(error.message)) throw noFileAccess();
+          throw error;
+        });
+        const after = await callOn<FileInputState>(tabId, objectId, fileInputState);
+        return { files: after.files, ...(await settle(tabId)) };
+      } finally {
+        await cdp(tabId, "Runtime.releaseObject", { objectId }).catch(() => undefined);
+      }
     }
     default: {
       // Fails to compile if a BridgeMethod has no case. At run time this is a method the plugin does not know.

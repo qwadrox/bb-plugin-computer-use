@@ -92,6 +92,13 @@ window, pid or foreground attach.
   `browser_click`, `browser_type`, `browser_select`, `browser_key` and
   `browser_scroll` take those refs. Refs expire when the page changes
   (`stale_ref`): read again.
+- `browser_upload {tab_id, ref, paths}` attaches local files to a file
+  input, with no picker and no drag and drop: do not ask the user to drop a
+  file. `browser_read` lists file inputs as `file` lines, hidden ones behind
+  a dropzone too (`hidden`); pass that ref, or the dropzone's. Paths are
+  absolute paths on this machine. `no_file_access` means the user has to turn
+  on **Allow access to file URLs** for the extension once: pass on the link
+  the error gives, and wait.
 - `browser_screenshot` may answer `not_rendered` for a background tab; read
   the page instead of bringing the tab to the front.
 - `paused` means the user closed the browser's debugging bar: stop and tell

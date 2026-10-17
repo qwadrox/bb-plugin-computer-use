@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Bridge for bb",
   "short_name": "Browser Bridge",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Lets bb agents use background browser tabs. Needs the Desktop & Browser Agent plugin. Unofficial: not affiliated with bb or Cua AI.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArtvPyqF3To6Ga1+OL5tg1LnrCrO58jRW2D2Rg5WAv+EM7cQQyDt9SIIzWDtPv42lIVHI/45mg/nlPcC7Z84v/+8ji20yONznPhc53JkXJg+/BOBt2Bfis1HlCwnpZkM2hXZRba+/iWc/R3hWjf2jvC3gUEYSbvv5o4hTxggrPWshO2QTR32MLxtpJ0pxUNdsO7jJ2aHr+EJjUNiqo3Fy7nxvIgqfaMsf6d/8oByc9cayILUHT+onWr1SdiyT9IzMmEd9M4t/pP5vs3TY5W/a+0/GwXz+y5h6bKyS9hf0aqZ8VSypY81g6KFPvVCFBFao5V1X56/gCgXr4JdSce0z6QIDAQAB",
   "minimum_chrome_version": "116",
@@ -31,5 +31,6 @@
     "tabGroups",
     "storage",
     "alarms"
-  ]
+  ],
+  "host_permissions": ["file:///*"]
 }

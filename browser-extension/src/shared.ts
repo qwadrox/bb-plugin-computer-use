@@ -44,6 +44,8 @@ export interface BridgeParams {
   navigate: { tab_id: number; url: string };
   screenshot: { tab_id: number };
   close: { tab_id: number };
+  /** Absolute paths on the browser's machine; `ref` is a file input, or an element around one. */
+  upload: { tab_id: number; ref?: string; paths: string[] };
 }
 
 /** Every method the extension answers. */
@@ -70,7 +72,9 @@ export type BridgeErrorCode =
   | "no_such_option"
   | "no_history"
   | "not_rendered"
-  | "page_error";
+  | "page_error"
+  | "no_file_input"
+  | "no_file_access";
 
 /** Codes the plugin's host raises itself (src/browser-host.ts), before or instead of the extension. */
 export type HostErrorCode =
@@ -79,4 +83,5 @@ export type HostErrorCode =
   | "not_connected"
   | "no_such_browser"
   | "several_browsers"
-  | "bridge_failed";
+  | "bridge_failed"
+  | "no_such_file";

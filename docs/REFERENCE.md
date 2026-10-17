@@ -174,9 +174,20 @@ it out, and in a tab that is not in front it moves without animating. Untick
 Tools: `browser_tabs`, `browser_open`, `browser_read` (a text outline with
 `[eN]` refs), `browser_click`, `browser_type`, `browser_select`,
 `browser_key`, `browser_scroll`, `browser_navigate`, `browser_screenshot`,
-`browser_close`. They obey routing like the `cua_*` tools, and with **Ask
-before sensitive actions** on, the first one in a thread asks you. Agents
-cannot reach `chrome://` pages or other extensions.
+`browser_close`, `browser_upload`. They obey routing like the `cua_*` tools,
+and with **Ask before sensitive actions** on, the first one in a thread asks
+you. Agents cannot reach `chrome://` pages or other extensions.
+
+`browser_upload` attaches files from this machine to a page's file input, as
+choosing them in the file picker would, in any of these browsers and in
+background tabs; no picker opens. `browser_read` lists file inputs as `file`
+lines, including the hidden input behind a dropzone, so agents have a ref for
+it. The host checks that each path is an existing file before the browser sees
+it. The browser hands files to a page only when the extension has **Allow
+access to file URLs**: an unpacked build has it already; for a Web Store
+install, turn it on once on the extension's details page (the agent's error
+gives the link). With **Ask before sensitive actions** on, every upload asks
+you, with the paths, separately from the thread's browser approval.
 The bridge accepts connections only from this user (socket mode 0600) and
 only from the extension's id.
 

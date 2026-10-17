@@ -65,7 +65,10 @@ Lets coding agents running in the bb app on the user's own computer read and ope
   ```
   Retries the connection to the local bridge periodically after bb or the browser restarts.
   ```
-- **Host permissions:** none requested.
+- **Host permissions:** `file:///*`:
+  ```
+  Agents can attach a file from the user's computer to a page's file input, as choosing it in the file picker would (the DevTools Protocol's DOM.setFileInputFiles). The browser allows that only while the user has turned on "Allow access to file URLs" for the extension; requesting file:// access is what shows that switch. The extension never opens, reads or sends file:// pages; the file goes only to the page the agent is filling in.
+  ```
 
 **Remote code:** No, I am not using remote code. (All JavaScript is in the package.)
 

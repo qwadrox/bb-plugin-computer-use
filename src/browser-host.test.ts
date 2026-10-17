@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EXTENSION_IDS } from "./links.js";
@@ -129,6 +129,27 @@ describe("browser bridge calls", () => {
     expect(state.connections).toEqual([{ browser: "Brave", version: "155.0", extension: "0.1.0", pid: brave.child.pid }]);
     const reply = await callBrowser(layout, "read", { tab_id: 4 });
     expect(reply).toEqual({ ok: true, browser: "Brave", result: { method: "read", params: { tab_id: 4 } } });
+  });
+
+  it("checks upload paths on this machine before the browser sees them", async () => {
+    const { layout } = tempLayout();
+    await installBridge(layout, process.execPath);
+    const brave = fakeBrowser(layout, "Brave", (method, params) => ({ method, params }));
+    await brave.started;
+    const file = join(layout.sockets, "..", "statement.csv");
+    writeFileSync(file, "a,b\n");
+
+    expect(await callBrowser(layout, "upload", { tab_id: 4, paths: [file] })).toMatchObject({ ok: true, result: { method: "upload" } });
+    expect(await callBrowser(layout, "upload", { tab_id: 4, paths: ["statement.csv"] })).toEqual({
+      ok: false,
+      code: "no_such_file",
+      message: "statement.csv is not an absolute path.",
+    });
+    expect(await callBrowser(layout, "upload", { tab_id: 4, paths: [file, `${file}.gone`] })).toMatchObject({
+      code: "no_such_file",
+      message: `${file}.gone does not exist on this machine.`,
+    });
+    expect(await callBrowser(layout, "upload", { tab_id: 4, paths: [layout.sockets] })).toMatchObject({ message: `${layout.sockets} is not a file.` });
   });
 
   it("passes the extension's refusal through with its code", async () => {
