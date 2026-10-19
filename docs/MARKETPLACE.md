@@ -15,8 +15,8 @@ The name and icon keep it apart from the older **Computer Use** entry
   `author.github` must be the account that opens the PR (`qwadrox`).
 - `icons/desktop-browser-agent-<hash>.svg`: a copy of `icons/desktop-browser-agent.svg`,
   named with the first 8 hex chars of its SHA-256.
-- `overview/desktop-browser-agent.md`: at most 4000 characters, absolute https links,
-  no HTML, images or tables.
+- `overview/desktop-browser-agent.md`: a copy of `PLUGIN_OVERVIEW.md`; at most 4000
+  characters, absolute https links, no HTML, images or tables.
 - `screenshots/desktop-browser-agent/` (optional): at most 6, PNG/JPEG/WebP, at least
   1200 px wide, at most 2 MiB. Keep personal thread titles out of them.
   Copy `docs/screenshots/*.png`; `node docs/screenshots/frame.mjs

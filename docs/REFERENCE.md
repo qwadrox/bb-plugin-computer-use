@@ -22,7 +22,9 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 - **Cua Driver on each machine that should be driven.** The plugin never
   installs it silently: click **Install Cua Driver…** next to a machine in the
   plugin settings, or run `bb cua install --yes`, or install it yourself.
-  macOS 14+, Windows 10/11, or Linux x86_64 with X11 or XWayland plus AT-SPI 2.
+  Tested on macOS 14+. Cua Driver also supports Windows 10/11 and Linux
+  x86_64 with X11 or XWayland plus AT-SPI 2, and the plugin has code paths
+  for both, but neither has been tested with this plugin yet.
   The tested release, by hand:
 
   ```sh
@@ -142,7 +144,7 @@ browser's debugger API on its tabs, so agents click and type in
 background tabs while you use other tabs. The browser shows its "started
 debugging this browser" bar while an agent is attached; closing that bar
 pauses agents until you resume them from the extension. The bridge runs on
-macOS and Linux only.
+macOS and Linux only, and is tested on macOS.
 
 Nothing changes until you turn it on:
 

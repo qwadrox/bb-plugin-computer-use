@@ -48,8 +48,10 @@ team. See [NOTICE.md](NOTICE.md).
    next to your machine, and on macOS select **Grant macOS permissions**.
 3. Start a new thread and ask the agent to do something in an app.
 
-Needs bb 0.39 or later, and macOS 14+, Windows 10/11, or Linux (X11). The
-browser extension works on macOS and Linux only. For manual installs, see the
+Needs bb 0.39 or later. Tested on macOS 14+. Windows 10/11 and Linux (X11)
+are supported by Cua Driver but not yet tested with this plugin. The browser
+extension is tested on macOS; it has a Linux setup too, also untested, and
+none on Windows. For manual installs, see the
 [reference](docs/REFERENCE.md#requirements).
 
 ## Two ways to work in a browser

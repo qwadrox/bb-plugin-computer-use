@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Honest platform support.** The README, the reference and the new
+  `PLUGIN_OVERVIEW.md` say the plugin is tested on macOS 14+; Windows and
+  Linux are supported by Cua Driver but not yet tested with it.
+
 ## 0.5.0 - 2026-10-19
 
 - **A more careful skill.** Agents prefer a CLI, an API or a connector to
