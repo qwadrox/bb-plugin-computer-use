@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-19
 
 - **A more careful skill.** Agents prefer a CLI, an API or a connector to
   the GUI, choose a window by title, wait with `wait_for` or `expect`
