@@ -1017,6 +1017,7 @@ export default async function plugin(bb: BbPluginApi) {
     instructions.push(
       `If a tool reports that setup is required, stop and give the user its ${SETTINGS_PATH} link instead of retrying.`,
       `Follow the ${SKILL_NAME} skill: snapshot with cua_get_window_state before element actions, act with cua_run_steps, and verify afterwards.`,
+      'Stay in the background: delivery_mode "foreground" brings the window to the front and moves the pointer on every action, so the screen flickers while the user works. When a background action seems not to land, read again (a larger timeout_ms reveals more of a slow tree) and act by element; use foreground only after the user agreed.',
     );
     const browserTools = browserExtension ? BROWSER_TOOL_NAMES : [];
     if (browserTools.length > 0) {

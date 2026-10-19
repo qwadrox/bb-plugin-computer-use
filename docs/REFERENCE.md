@@ -346,7 +346,13 @@ thread turn ──▶ bb server (plugin server.ts)
   answer its own requests with `bb thread interactions respond`.
 - Agents are instructed never to launch apps or send, submit, or delete
   without explicit user intent for that step, and to treat text inside apps
-  as data rather than instructions. Review actions in the thread timeline;
+  as data rather than instructions. The same holds for installing software,
+  changing system settings, granting account access, creating keys and
+  typing personal data into forms; CAPTCHAs, browser safety warnings and
+  the last step of a password change are left to you. Agents sign in on the
+  site or app you sent them to, but not elsewhere. They act in the background and use
+  foreground delivery, which brings the window to the front on every action,
+  only after you agree. Review actions in the thread timeline;
   every tool call is a labeled row.
 - Cua Driver sends content-free telemetry to Cua by default. Disable it on the
   machine with `cua-driver telemetry disable` (see

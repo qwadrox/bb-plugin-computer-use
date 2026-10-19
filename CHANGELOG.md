@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **A more careful skill.** Agents prefer a CLI, an API or a connector to
+  the GUI, choose a window by title, wait with `wait_for` or `expect`
+  instead of fixed delays, and treat a task as done only when the result
+  shows in a fresh read. Multi-line text goes into chat composers with
+  `set_value`, since a typed newline can send the message. They ask before
+  installing software, changing system settings, granting account access,
+  creating keys or typing personal data into a form, and hand CAPTCHAs,
+  browser safety warnings and the last step of a password change to the
+  user. Signing in on the site or app the user sent them to is now part of
+  the task; other sign-ins still wait for the user. New app notes for
+  Slack, Notion, Numbers, Music, Spotify, Clock and iPhone Mirroring.
+- **No more flickering windows from foreground retries.** Agents are told,
+  in their instructions and the skill, to stay in the background and to use
+  `delivery_mode: "foreground"` only after the user agreed: it brings the
+  window to the front on every action. The driver's "retry with foreground"
+  hint no longer reads as the next step, a tree cut off by `timeout_ms` is
+  read again with a longer budget, and the iOS Simulator is driven with
+  `axe` and `xcrun simctl` rather than through its window.
 - **Agents see the plugin's name.** Their instructions open with "Desktop &
   Browser Agent", the skill is now `desktop-browser-agent` (was
   `cua-computer-use`), and `bb cua` and the package description use the name
