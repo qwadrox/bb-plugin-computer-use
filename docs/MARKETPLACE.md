@@ -30,6 +30,11 @@ the browser extension and do not match the range). Bump `package.json`,
 date the CHANGELOG section, run `npm run check`, then tag and push. Users see
 the update on the next catalog refresh; nothing installs automatically.
 
+The `release` workflow then publishes the tag's GitHub release, with that
+version's CHANGELOG section as its notes (`node scripts/release-notes.mjs
+vX.Y.Z` prints them). It fails when the section is missing; a manual run with
+a tag (re)publishes that release from `main`'s changelog.
+
 A new marketplace PR is needed only to change the entry's source, name or
 branding. Run `npm ci && npm run build && npm test && npm run gate:v1 && npm
 run check` in the marketplace repo before opening it; `check` needs the tag

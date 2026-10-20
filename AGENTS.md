@@ -47,7 +47,8 @@ skills/desktop-browser-agent/ agent skill injected when the tools are offered
 scripts/sync-driver-tools.mjs  npm run sync:tools: rewrites the snapshot and installer checksums
 icons/                   plugin icon (package.json branding)
 live.test.ts, browser.e2e.test.ts   opt-in: npm run test:live, npm run test:browser
-.github/workflows/       ci.yml, driver-drift.yml (daily driver check, opens a PR), publish-extension.yml (Web Store)
+scripts/release-notes.mjs     a version's CHANGELOG section, the notes of its GitHub release
+.github/workflows/       ci.yml, driver-drift.yml (daily driver check, opens a PR), publish-extension.yml (Web Store), release.yml (GitHub release on a v* tag)
 docs/REFERENCE.md        user-facing behaviour in full (settings, routing, safety)
 docs/SPEC.md, docs/ARCHITECTURE.md, docs/SETTINGS-UI.md, docs/PLAN.md   design notes (SPEC is the original design)
 docs/MARKETPLACE.md      the bb marketplace entry and the release steps

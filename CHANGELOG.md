@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Release notes on GitHub.** Each version's GitHub release shows its
+  section of this changelog.
+
 ## 0.5.2 - 2026-10-20
 
 - **Tested with Cua Driver 0.37.0.** Installs and updates now target 0.37.0.

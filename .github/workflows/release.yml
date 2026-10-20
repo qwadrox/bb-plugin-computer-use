@@ -1,0 +1,38 @@
+# Publishes a GitHub release for each plugin tag (v*), with that version's
+# CHANGELOG.md section as its notes (scripts/release-notes.mjs). A tag push
+# reads the tag's changelog; a manual run reads the branch it runs on, so it
+# can (re)publish an older tag. An existing release gets its notes replaced.
+# extension-v* tags are the browser extension's and get no release here.
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. v0.5.2"
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::not a v<major>.<minor>.<patch> tag: '$TAG'"
+            exit 1
+          fi
+          node scripts/release-notes.mjs "$TAG" > notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md
+          fi
