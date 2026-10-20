@@ -135,7 +135,8 @@ describe.skipIf(!LIVE)("live against the installed Cua Driver", () => {
         let clickedText = "";
         let pressed = false;
         for (let attempt = 0; attempt < 10 && !pressed; attempt += 1) {
-          const state = structuredOf(await call("cua_get_window_state", { pid, window_id: windowId, query }));
+          // The default tree is Markdown only; the elements array carries each element's token and label.
+          const state = structuredOf(await call("cua_get_window_state", { pid, window_id: windowId, query, tree_format: "elements" }));
           const elements = (state.elements ?? []) as Array<{ element_token: string; label?: string; title?: string; description?: string }>;
           const target = elements.find((element) => [element.label, element.title, element.description].some((value) => pattern.test(value ?? "")));
           if (target !== undefined) {
