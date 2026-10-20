@@ -156,8 +156,8 @@ export const BROWSER_TOOLS: readonly BrowserTool[] = [
     name: "browser_screenshot",
     method: "screenshot",
     description:
-      "Take a JPEG of a tab's viewport, at most 1280 px wide. A tab in the background may not be drawn; then read it with browser_read instead.",
-    parameters: z.object({ tab_id: tabId, browser }) satisfies z.ZodType<BridgeParams["screenshot"]>,
+      "Take a JPEG of a tab's viewport at its CSS size (one image pixel per CSS pixel), or pass ref for that element alone at the screen's full resolution, to read small print. A tab in the background may not be drawn; then read it with browser_read instead.",
+    parameters: z.object({ tab_id: tabId, ref: ref.optional(), browser }) satisfies z.ZodType<BridgeParams["screenshot"]>,
     labels: { pending: "Taking a screenshot", completed: "Took a screenshot" },
   },
   {

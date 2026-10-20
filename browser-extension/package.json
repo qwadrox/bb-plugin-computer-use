@@ -1,6 +1,6 @@
 {
   "name": "browser-bridge-for-bb",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Optional browser extension for the Desktop & Browser Agent bb plugin: lets bb agents work in your browser tabs, through chrome.debugger.",
