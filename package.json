@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-desktop-browser-agent",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "type": "module",
   "engines": {
     "bb": ">=0.39",

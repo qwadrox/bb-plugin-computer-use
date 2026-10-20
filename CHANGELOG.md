@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.3 - 2026-10-20
 
 - **Release notes on GitHub.** Each version's GitHub release shows its
   section of this changelog.
