@@ -4,6 +4,10 @@
 
 - **Release notes on GitHub.** Each version's GitHub release shows its
   section of this changelog.
+- **Driver updates are easy to spot.** After a plugin update, a machine
+  whose Cua Driver is older than the tested one no longer reads Ready on the
+  settings page: its row says **Update available**, opens by itself, and
+  offers **Update to tested vX…**.
 
 ## 0.5.2 - 2026-10-20
 

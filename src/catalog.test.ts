@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { META_TOOLS, advertisedSchema, agentToolName, driverToolName, overridableSchema } from "./catalog.js";
-import { diffCatalogs, formatDrift, hasDrift, summarizeDrift } from "./drift.js";
+import { diffCatalogs, formatDrift, hasDrift, isOlderVersion, summarizeDrift } from "./drift.js";
 import { compactSchema, firstSentence, leadParagraph, normalizeDriverTool, normalizeDriverTools, type DriverTool } from "./driver-tools.js";
 import { REVIEWED_TOOLS, defaultExposure, groupOf, normalizeOverrides, resolveExposure } from "./exposure.js";
 import { SNAPSHOT_CATALOG, TESTED_DRIVER_VERSION } from "./snapshot.js";
@@ -185,5 +185,14 @@ describe("drift", () => {
     const relabeled = diffCatalogs(tested, { ...tested, driverVersion: "1.0.1" });
     expect(hasDrift(relabeled)).toBe(false);
     expect(summarizeDrift(relabeled)).toMatch(/differs from the tested 1\.0\.0, but its tools are unchanged/);
+  });
+
+  it("tells an older driver from a newer or the same one, part by part", () => {
+    expect(isOlderVersion("0.36.0", "0.37.0")).toBe(true);
+    expect(isOlderVersion("0.9.0", "0.10.0")).toBe(true);
+    expect(isOlderVersion("0.37.1", "0.37.0")).toBe(false);
+    expect(isOlderVersion("0.37.0", "0.37.0")).toBe(false);
+    expect(isOlderVersion("1.0.0", "0.99.0")).toBe(false);
+    expect(isOlderVersion("0.36.0-beta", "0.37.0")).toBe(false);
   });
 });

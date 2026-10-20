@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { isOlderVersion } from "@/src/drift";
 import { CUA_INSTALL_DOCS_URL, manualInstallCommands } from "@/src/links";
 import { Disclosure, Hint, installPhase, SectionState, SectionTooltips, TextLink, type Host } from "./shared";
 import { installPresentation, InstallDialog } from "./install-dialog";
@@ -203,6 +204,8 @@ function MachineSetupPanel({
   const canInstall = driver !== null && !driver.installed;
   // Changing versions reuses the installer flow: it stops the driver, installs the chosen release and restarts it.
   const offTested = driver !== null && driver.installed && driver.version !== testedVersion;
+  // Older than tested: a plugin update moved past this driver, so the row says so instead of "Ready".
+  const updateDue = offTested && driver.version !== null && isOlderVersion(driver.version, testedVersion);
   const newerUntested = driver !== null && driver.installed && !offTested && driver.updateAvailable === true;
   const canUpdate = offTested || newerUntested;
   const canGrant =
@@ -217,13 +220,14 @@ function MachineSetupPanel({
   const completeCount = requiredChecks.filter((check) => check.state === "complete").length;
   const needsAction = requiredChecks.some((check) => check.state === "required" || check.state === "waiting");
   const phase = installPhase(install);
-  let summary = needsAction ? "Setup needs attention" : "Ready";
+  let summary = needsAction ? "Setup needs attention" : updateDue ? "Update available" : "Ready";
   if (phase === "running") {
     summary = installPresentation(install).label;
   } else if (phase === "failed") {
     summary = "Installation failed";
   }
-  const summaryTone = phase === "failed" ? "text-destructive-text" : needsAction || phase === "running" ? "text-warning-text" : "text-success-foreground";
+  const summaryTone =
+    phase === "failed" ? "text-destructive-text" : needsAction || updateDue || phase === "running" ? "text-warning-text" : "text-success-foreground";
   const showRefresh = needsAction && phase !== "running";
   const showActions = canInstall || canUpdate || canGrant || showRefresh;
 
@@ -231,7 +235,7 @@ function MachineSetupPanel({
     <div role="listitem" data-machine-row>
       <Disclosure
         ariaLabel={`${host.name} setup, online, ${summary}, ${completeCount} of ${requiredChecks.length}`}
-        defaultOpen={needsAction || install.running}
+        defaultOpen={needsAction || updateDue || install.running}
         forceOpen={install.ok === false}
         label={
           <span className="flex min-w-0 items-center gap-3">
@@ -241,7 +245,7 @@ function MachineSetupPanel({
         }
         meta={
           !needsAction && !install.running && install.ok !== false ? (
-            <span data-machine-summary className={summaryTone}>Ready</span>
+            <span data-machine-summary className={summaryTone}>{summary}</span>
           ) : (
             <span>
               <span className={summaryTone}>{summary}</span>
@@ -293,11 +297,13 @@ function MachineSetupPanel({
                     ? "View progress"
                     : phase === "failed"
                       ? "Retry install…"
-                      : offTested
-                        ? `Switch to tested v${testedVersion}…`
-                        : newerUntested
-                          ? `v${driver?.latestVersion ?? "newer"} available (untested)…`
-                          : "Install Cua Driver…"}
+                      : updateDue
+                        ? `Update to tested v${testedVersion}…`
+                        : offTested
+                          ? `Switch to tested v${testedVersion}…`
+                          : newerUntested
+                            ? `v${driver?.latestVersion ?? "newer"} available (untested)…`
+                            : "Install Cua Driver…"}
                 </Button>
               ) : null}
               {canGrant ? (

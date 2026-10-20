@@ -402,6 +402,42 @@ describe("settings sections", () => {
     slot.lifecycle.unmount();
   });
 
+  it("says an update is available when a machine's driver is older than the tested one", async () => {
+    const app = await loadPluginApp(() => import("./app"));
+    const section = app.settingsSections.find((candidate) => candidate.id === "driver-machines")!;
+    const [laptop] = baseState.hosts;
+    const installCalls: unknown[] = [];
+    const older = {
+      ...laptop!,
+      driver: {
+        ...laptop!.driver,
+        version: "0.35.0",
+        permissions: { accessibility: true, screenRecording: true, directCapture: "not_checked" },
+        latestVersion: "0.36.0",
+        updateAvailable: true,
+      },
+    };
+    const slot = renderSlot(section, {}, {
+      rpc: {
+        getState: () => ({ ...baseState, hosts: [older] }),
+        installDriver: (input: unknown) => {
+          installCalls.push(input);
+          return { ...laptop!.install, running: true };
+        },
+      },
+    });
+
+    // Everything else is ready, yet the row opens and names the update instead of "Ready".
+    const machine = await slot.findByRole("button", { name: /^laptop setup, online, Update available/ });
+    expect(machine.getAttribute("aria-expanded")).toBe("true");
+    expect((await slot.findByText("Update available")).classList.contains("text-warning-text")).toBe(true);
+    fireEvent.click(await slot.findByRole("button", { name: "Update to tested v0.36.0…" }));
+    await slot.findByRole("dialog", { name: "Change Cua Driver on laptop" });
+    fireEvent.click(await slot.findByRole("button", { name: "Install v0.36.0" }));
+    await waitFor(() => expect(installCalls).toEqual([{ hostId: "host_1", target: "tested" }]));
+    slot.lifecycle.unmount();
+  });
+
   it("offers a newer release on the tested driver only as an untested choice", async () => {
     const app = await loadPluginApp(() => import("./app"));
     const section = app.settingsSections.find((candidate) => candidate.id === "driver-machines")!;

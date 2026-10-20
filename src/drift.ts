@@ -14,6 +14,16 @@ export interface DriftReport {
   changed: ToolChange[];
 }
 
+/** Whether an x.y.z driver version is older than another; false when either is not x.y.z. */
+export function isOlderVersion(version: string, than: string): boolean {
+  const parse = (value: string): number[] | null => (/^\d+\.\d+\.\d+$/.test(value) ? value.split(".").map(Number) : null);
+  const a = parse(version);
+  const b = parse(than);
+  if (a === null || b === null) return false;
+  const index = a.findIndex((part, position) => part !== b[position]);
+  return index !== -1 && a[index]! < b[index]!;
+}
+
 function propertyNames(tool: DriverTool): Set<string> {
   const properties = tool.inputSchema.properties;
   return new Set(typeof properties === "object" && properties !== null ? Object.keys(properties) : []);

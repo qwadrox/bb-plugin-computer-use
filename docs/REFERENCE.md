@@ -51,6 +51,10 @@ Open **Settings → Plugins → Desktop & Browser Agent**, or use the CLI.
 Each enrolled machine has an expandable checklist for its bb connection, Cua
 Driver installation, service state, and macOS Accessibility, Screen Recording,
 and direct-capture consent. Machines needing attention open automatically.
+So does a machine whose driver is older than the one this plugin release was
+tested with: its row reads **Update available** instead of Ready, and **Update
+to tested vX…** installs the tested release. A driver newer than the tested
+one, chosen on purpose, still reads Ready.
 Actions to install, grant permissions, and re-check setup stay inside that
 machine's panel.
 
