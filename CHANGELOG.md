@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 - 2026-10-20
 
 - **Honest platform support.** The README, the reference and the new
   `PLUGIN_OVERVIEW.md` say the plugin is tested on macOS 14+; Windows and
@@ -10,7 +10,7 @@
   had shrunk text below its real size and blurred it. The browser scales the
   picture while drawing it, so it is no longer compressed twice. With `ref`
   it shows a single element at the screen's full resolution, for small
-  print. Needs the updated Browser Bridge for bb.
+  print. Needs Browser Bridge for bb 0.2.1.
 
 ## 0.5.0 - 2026-10-19
 
