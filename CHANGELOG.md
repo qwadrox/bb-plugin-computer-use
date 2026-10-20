@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2 - 2026-10-20
 
 - **Tested with Cua Driver 0.37.0.** Installs and updates now target 0.37.0.
   Its new `browser_select` is the dedicated tool `cua_browser_select`: it
