@@ -62,11 +62,12 @@ export const REVIEWED_TOOLS: Readonly<Record<string, Reviewed>> = {
   set_window_frame: tool("Move and resize a window to an exact frame, then read the geometry back.", "Setting window frame", "Set window frame"),
   bring_to_front: tool("Activate an app and leave it in the foreground. Use only when the user asked for a visible window or background delivery was refused.", "Bringing window to front", "Brought window to front"),
   // Browser.
-  get_browser_state: tool("Bind a Chrome, Edge, Brave, or Electron window to its page and return a semantic snapshot with refs for cua_browser_click and cua_browser_type. Refs expire on the next snapshot.", "Reading browser state", "Read browser state", "browser"),
+  get_browser_state: tool("Bind a Chrome, Edge, Brave, or Electron window to its page and return a semantic snapshot with refs for cua_browser_click, cua_browser_type and cua_browser_select. Refs expire on the next snapshot.", "Reading browser state", "Read browser state", "browser"),
   browser_prepare: tool("Prepare a DevTools endpoint for a browser. With allow_launch it can start a separate, isolated driver-owned Chromium; attaching to a signed-in profile needs the Signed-in browser profiles plugin setting.", "Preparing the browser", "Prepared the browser", "browser"),
   browser_navigate: tool("Navigate a bound tab to an http, https, or about URL.", "Navigating the browser", "Navigated the browser", "browser"),
   browser_click: tool("Click a page element by ref from cua_get_browser_state or by viewport coordinates.", "Clicking in the browser", "Clicked in the browser", "browser"),
   browser_type: tool("Type into a page element by ref.", "Typing in the browser", "Typed in the browser", "browser"),
+  browser_select: tool("Choose one option of a native <select> by ref, by its exact label or value, without opening the popup.", "Choosing in the browser", "Chose in the browser", "browser"),
   browser_pointer: tool("Hover, right-click, double-click, scroll, or drag inside a bound tab.", "Using the pointer in the browser", "Used the pointer in the browser", "browser"),
   browser_dialog: tool("Inspect or resolve a JavaScript alert, confirm, or prompt dialog.", "Handling the browser dialog", "Handled the browser dialog", "browser"),
   browser_download: tool("Trigger one download from a live page ref and save it inside an approved, existing absolute directory. Confirm the destination with the user.", "Downloading in the browser", "Downloaded in the browser", "browser"),
@@ -74,7 +75,8 @@ export const REVIEWED_TOOLS: Readonly<Record<string, Reviewed>> = {
   // Clipboard.
   clipboard_read: tool("List clipboard content types and optionally return the plain text.", "Reading clipboard", "Read clipboard", "clipboard"),
   clipboard_write: tool("Replace the clipboard with text, an image file, or a file reference.", "Writing clipboard", "Wrote clipboard", "clipboard"),
-  // Reachable through cua_call: diagnostics, cursor cosmetics, legacy aliases.
+  // Reachable through cua_call: the driver's guide, diagnostics, cursor cosmetics, legacy aliases.
+  get_guide: call(),
   get_screen_size: call(),
   get_cursor_position: call(),
   move_cursor: call(),

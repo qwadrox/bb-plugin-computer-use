@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 - 2026-10-20
+
+- **Tested with Cua Driver 0.37.0.** Installs and updates now target 0.37.0.
+  Its new `browser_select` is the dedicated tool `cua_browser_select`: it
+  chooses an option of a native `<select>` by label or value without
+  opening the popup. Its new `get_guide`, the driver's own guidance by topic,
+  is reachable through `cua_call`.
+
 ## 0.5.1 - 2026-10-20
 
 - **Honest platform support.** The README, the reference and the new

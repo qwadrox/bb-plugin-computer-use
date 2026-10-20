@@ -189,8 +189,9 @@ window, pid or foreground attach.
 
 Bind a Chrome, Edge or Electron window with
 `cua_get_browser_state {pid, window_id}`, then use `cua_browser_click`,
-`cua_browser_type`, `cua_browser_navigate` and `cua_browser_pointer` with the
-returned refs. If binding is refused, `detail.next_call` names the
+`cua_browser_type`, `cua_browser_select` (a native `<select>`, by label or
+value), `cua_browser_navigate` and `cua_browser_pointer` with the returned
+refs. If binding is refused, `detail.next_call` names the
 `cua_browser_prepare` call.
 
 - A browser people use daily is a signed-in profile. Attaching needs the

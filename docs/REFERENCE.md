@@ -6,7 +6,7 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 
 | Surface | Details |
 | --- | --- |
-| Agent tools | Read from each machine's own Cua Driver (`tools/list`), so a newer driver's tools and arguments reach agents without a plugin release. With Cua Driver 0.36.0: 32 dedicated `cua_*` tools (desktop, browser, clipboard, and `cua_run_steps`, the driver's default way to act), 17 more through `cua_call`, and 9 off until you enable them. Plus `cua_call`, `cua_describe` and `cua_status`. Screenshots come back as images the model can see. |
+| Agent tools | Read from each machine's own Cua Driver (`tools/list`), so a newer driver's tools and arguments reach agents without a plugin release. With Cua Driver 0.37.0: 33 dedicated `cua_*` tools (desktop, browser, clipboard, and `cua_run_steps`, the driver's default way to act), 18 more through `cua_call`, and 9 off until you enable them. Plus `cua_call`, `cua_describe` and `cua_status`. Screenshots come back as images the model can see. |
 | Exposure policy | Every driver tool is a dedicated tool, reachable only through `cua_call`, or off. Code execution (`run_script`), `kill_app`, recording, driver configuration and extension installs start off. A tool new to this plugin is reachable through `cua_call` if the driver marks it read-only, and off otherwise. `cua_call` obeys the same policy. |
 | Drift report | The plugin compares each machine's driver with the one it was tested with and names new, removed and changed tools in `bb cua status`, `bb cua drift`, the settings page, and one line in agent instructions. |
 | Pinned installs | Install and update target the tested driver by default. The plugin downloads that release's installer files from GitHub and runs them only if each matches a checksum recorded in this repo. The newest release is a separate, explicitly untested choice. |
@@ -29,7 +29,7 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 
   ```sh
   # macOS / Linux
-  CUA_DRIVER_RS_VERSION=0.36.0 /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"
+  CUA_DRIVER_RS_VERSION=0.37.0 /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"
   cua-driver doctor
   # macOS only: grant Accessibility + Screen Recording, then relaunch CuaDriver.app
   cua-driver permissions grant
@@ -37,7 +37,7 @@ Everything the [README](../README.md) leaves out: setup by hand, every setting, 
 
   ```powershell
   # Windows
-  $env:CUA_DRIVER_RS_VERSION="0.36.0"; irm https://cua.ai/driver/install.ps1 | iex
+  $env:CUA_DRIVER_RS_VERSION="0.37.0"; irm https://cua.ai/driver/install.ps1 | iex
   cua-driver autostart kick
   ```
 
@@ -238,7 +238,7 @@ The host worker then:
 
 1. stops a running driver, if any,
 2. for the tested release, downloads `install.sh` and `_install-rust.sh`
-   (`install.ps1` on Windows) from the `cua-driver-rs-v0.36.0` GitHub release
+   (`install.ps1` on Windows) from the `cua-driver-rs-v0.37.0` GitHub release
    and the `_install-common` helper from the same tag, and refuses to run any
    file whose sha256 differs from `src/driver-installer.json`; for the newest
    release, downloads Cua's one-line script from cua.ai instead,
