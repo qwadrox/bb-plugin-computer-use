@@ -412,6 +412,57 @@ export function locateRef(ref: string): Located {
   return { found: true, visible: rect.width > 0 && rect.height > 0, x, y, covered };
 }
 
+export interface ShotArea {
+  found: boolean;
+  devicePixelRatio: number;
+  /** In CSS pixels from the document's top left, as Page.captureScreenshot's clip takes them. */
+  x: number;
+  y: number;
+  /** Zero when the ref is outside the viewport or takes no space. */
+  width: number;
+  height: number;
+}
+
+/** What a screenshot captures: the visible viewport, or a ref's box (scrolled into view, a little padded) within it. */
+export function shotArea(ref: string | null): ShotArea {
+  const PADDING = 8;
+  const element = ref === null ? null : findRef(ref);
+  if (ref !== null && element === null) return { found: false, devicePixelRatio: 1, x: 0, y: 0, width: 0, height: 0 };
+  element?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  const view = window.visualViewport;
+  const left = view?.offsetLeft ?? 0;
+  const top = view?.offsetTop ?? 0;
+  const width = view?.width ?? document.documentElement.clientWidth;
+  const height = view?.height ?? document.documentElement.clientHeight;
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  if (element === null) return { found: true, devicePixelRatio, x: scrollX + left, y: scrollY + top, width, height };
+  const rect = element.getBoundingClientRect();
+  let x = rect.left;
+  let y = rect.top;
+  // Inside same-origin frames, add each frame's offset to reach the tab's viewport.
+  let frameView: Window | null = element.ownerDocument.defaultView;
+  while (frameView !== null && frameView !== window && frameView.frameElement !== null) {
+    const frame = frameView.frameElement;
+    const box = frame.getBoundingClientRect();
+    x += box.left + frame.clientLeft;
+    y += box.top + frame.clientTop;
+    frameView = frameView.parent;
+  }
+  const x1 = Math.max(left, x - PADDING);
+  const y1 = Math.max(top, y - PADDING);
+  const x2 = Math.min(left + width, x + rect.width + PADDING);
+  const y2 = Math.min(top + height, y + rect.height + PADDING);
+  const empty = rect.width <= 0 || rect.height <= 0 || x2 <= x1 || y2 <= y1;
+  return {
+    found: true,
+    devicePixelRatio,
+    x: scrollX + x1,
+    y: scrollY + y1,
+    width: empty ? 0 : x2 - x1,
+    height: empty ? 0 : y2 - y1,
+  };
+}
+
 /** Clicks through the DOM; the fallback when trusted input is unavailable. */
 export function domClick(ref: string): boolean {
   const element = findRef(ref) as HTMLElement | null;

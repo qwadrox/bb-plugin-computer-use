@@ -27,7 +27,7 @@ const FORM = `<!doctype html><title>Form</title>
 <h1>Expenses</h1>
 <label for="name">Name</label><input id="name">
 <label for="kind">Kind</label><select id="kind"><option value="a">Food</option><option value="b">Travel</option></select>
-<button id="save" onclick="document.getElementById('out').textContent = 'Saved: ' + document.getElementById('name').value + ' / ' + document.getElementById('kind').selectedOptions[0].text">Save</button>
+<button id="save" style="display:block;margin:20px;width:100px;height:30px" onclick="document.getElementById('out').textContent = 'Saved: ' + document.getElementById('name').value + ' / ' + document.getElementById('kind').selectedOptions[0].text">Save</button>
 <p id="out"></p>
 <a href="/second">Next page</a>
 <div style="height:3000px"></div>`;
@@ -130,7 +130,7 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
         "--no-first-run",
         "--no-default-browser-check",
         "--use-mock-keychain",
-        // A Retina-like screen, so screenshots are scaled down.
+        // A Retina-like screen, so a screenshot's CSS and device sizes differ.
         "--force-device-scale-factor=2",
         "--window-size=1000,800",
         "about:blank",
@@ -196,8 +196,13 @@ describe.skipIf(!enabled)("agent browser bridge end to end", () => {
     if (reply.ok) {
       const data = (reply.result as { data: string }).data;
       expect(data.length).toBeGreaterThan(1000);
-      // 1000 CSS px at 2x is 2000 px, scaled down to 1280.
-      expect(jpegWidth(data)).toBe(1280);
+      // The viewport at its CSS size: about 1000 px (less a scrollbar), not 2000.
+      expect(jpegWidth(data)).toBeGreaterThan(900);
+      expect(jpegWidth(data)).toBeLessThanOrEqual(1000);
+      // An element at full resolution: the 100 px button and 8 px padding on each side, at 2x.
+      const page = (await call("read", { tab_id: tabId })).text as string;
+      const button = await call("screenshot", { tab_id: tabId, ref: refFor(page, /button "Save"/) });
+      expect(jpegWidth(button.data as string)).toBe(232);
     } else {
       expect(reply.code).toBe("not_rendered");
     }

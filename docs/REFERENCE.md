@@ -210,7 +210,11 @@ How agents see a page:
   actions, pickers open as usual.
 - `browser_fill` fills a form in one call: text fields, selects, and
   checkboxes or switches (true or false). It does not submit.
-- Screenshots are at most 1280 pixels wide.
+- `browser_screenshot` shows the viewport at its CSS size, one image pixel
+  per CSS pixel (half a Retina capture), so text appears at the size the page
+  lays it out. With `ref` it shows only that element, a little padded, at
+  the screen's full resolution. Either is at most 1568 pixels on its longer
+  edge, and the JPEG is encoded once.
 
 `browser_upload` attaches files from this machine to a page's file input, as
 choosing them in the file picker would, in any of these browsers and in

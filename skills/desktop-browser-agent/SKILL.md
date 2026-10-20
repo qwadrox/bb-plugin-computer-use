@@ -170,8 +170,10 @@ window, pid or foreground attach.
   on this machine. `no_file_access` means the user has to turn on **Allow
   access to file URLs** for the extension once: pass on the link the error
   gives, and wait.
-- `browser_screenshot` (at most 1280 px wide) may answer `not_rendered` for
-  a background tab; read the page instead of bringing the tab to the front.
+- `browser_screenshot` shows the viewport at its CSS size. For small print
+  or a detail, pass `ref` to get that element alone at the screen's full
+  resolution. It may answer `not_rendered` for a background tab; read the
+  page instead of bringing the tab to the front.
 - `blocked_by_extension` (another extension's popup or frame, such as a
   password manager) and `restricted_page` (browser settings, extension
   store): the extension cannot act there, but the window tools can. Use

@@ -46,7 +46,8 @@ export interface BridgeParams {
   key: { tab_id: number; key: string; wait_for?: string };
   scroll: { tab_id: number; direction?: "up" | "down"; amount?: number; ref?: string };
   navigate: { tab_id: number; url: string; wait_for?: string };
-  screenshot: { tab_id: number };
+  /** Without `ref`, the viewport at its CSS size; with one, that element at the screen's full resolution. */
+  screenshot: { tab_id: number; ref?: string };
   close: { tab_id: number };
   /** Absolute paths on the browser's machine; `ref` is a file input, or an element around one. */
   upload: { tab_id: number; ref?: string; paths: string[]; wait_for?: string };

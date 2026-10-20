@@ -13,10 +13,12 @@ import {
   scrollPage,
   selectOption,
   setValue,
+  shotArea,
   snapshotPage,
   type FieldKind,
   type FileInputState,
   type Located,
+  type ShotArea,
   type SnapshotOptions,
   type SnapshotResult,
 } from "./page.js";
@@ -843,31 +845,20 @@ async function fileInputObject(tabId: number, ref: string | null): Promise<strin
   );
 }
 
-const SCREENSHOT_WIDTH = 1_280;
+/** The longest edge a screenshot gets: Claude scales larger pictures down to about this anyway. */
+const SCREENSHOT_MAX_EDGE = 1_568;
 
-/** Scales a JPEG down to SCREENSHOT_WIDTH: a Retina capture is twice the size and says no more. */
-async function fitWidth(data: string): Promise<string> {
-  try {
-    const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
-    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
-    if (bitmap.width <= SCREENSHOT_WIDTH) {
-      bitmap.close();
-      return data;
-    }
-    const height = Math.round((bitmap.height * SCREENSHOT_WIDTH) / bitmap.width);
-    const canvas = new OffscreenCanvas(SCREENSHOT_WIDTH, height);
-    const context = canvas.getContext("2d");
-    if (context === null) return data;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(bitmap, 0, 0, SCREENSHOT_WIDTH, height);
-    bitmap.close();
-    const scaled = new Uint8Array(await (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.75 })).arrayBuffer());
-    let binary = "";
-    for (let index = 0; index < scaled.length; index += 0x8000) binary += String.fromCharCode(...scaled.subarray(index, index + 0x8000));
-    return btoa(binary);
-  } catch {
-    return data;
-  }
+/**
+ * The capture for a screenshot. The viewport comes at its CSS size (half a
+ * Retina capture, the size the page lays its text out at); a ref's box comes
+ * at the screen's full resolution, for small print. Either is capped at
+ * SCREENSHOT_MAX_EDGE. The browser scales while drawing, so the JPEG is
+ * encoded once.
+ */
+function screenshotClip(area: ShotArea, full: boolean): Record<string, number> {
+  const { devicePixelRatio, x, y, width, height } = area;
+  const scale = Math.min(full ? 1 : 1 / devicePixelRatio, SCREENSHOT_MAX_EDGE / (Math.max(width, height) * devicePixelRatio));
+  return { x, y, width, height, scale };
 }
 
 // ---------------------------------------------------------------- methods
@@ -1048,13 +1039,24 @@ async function dispatch({ method, params }: BridgeRequest): Promise<unknown> {
       const cursor = (await readSettings()).cursor;
       if (cursor) await evaluate(tabId, hideCursor, true).catch(() => undefined);
       try {
+        const ref = typeof params.ref === "string" && params.ref !== "" ? params.ref : null;
+        const area = await evaluate<ShotArea>(tabId, shotArea, ref);
+        if (!area.found && ref !== null) throw staleRef(ref);
+        if (area.width <= 0 || area.height <= 0) {
+          throw new BridgeError(
+            "not_visible",
+            ref === null
+              ? "The tab's viewport has no size, so there is no picture. Read it with browser_read instead."
+              : `Ref ${ref} takes no space on the page, so there is nothing to show. Open what shows it (a menu, a tab, a section) and read again.`,
+          );
+        }
         const shot = await cdp<{ data: string }>(
           tabId,
           "Page.captureScreenshot",
-          { format: "jpeg", quality: 80, captureBeyondViewport: false },
+          { format: "jpeg", quality: 80, captureBeyondViewport: false, clip: screenshotClip(area, ref !== null) },
           SCREENSHOT_TIMEOUT_MS,
         );
-        return { data: await fitWidth(shot.data), mime_type: "image/jpeg" };
+        return { data: shot.data, mime_type: "image/jpeg" };
       } catch (error) {
         if (error instanceof BridgeError && error.code === "timeout") {
           throw new BridgeError(

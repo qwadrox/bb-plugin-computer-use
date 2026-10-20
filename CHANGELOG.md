@@ -5,6 +5,12 @@
 - **Honest platform support.** The README, the reference and the new
   `PLUGIN_OVERVIEW.md` say the plugin is tested on macOS 14+; Windows and
   Linux are supported by Cua Driver but not yet tested with it.
+- **Sharper browser screenshots.** `browser_screenshot` shows the viewport
+  at its CSS size instead of at most 1280 px wide, which on a Retina screen
+  had shrunk text below its real size and blurred it. The browser scales the
+  picture while drawing it, so it is no longer compressed twice. With `ref`
+  it shows a single element at the screen's full resolution, for small
+  print. Needs the updated Browser Bridge for bb.
 
 ## 0.5.0 - 2026-10-19
 
